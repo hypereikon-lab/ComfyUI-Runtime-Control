@@ -14,6 +14,14 @@ not MiniMax H3, CAUCE, a creative project, or browser layout.
   CUDA/PyTorch update, arbitrary shell, or physical reboot operations.
 - A completed queue item means `executes`, not visual success.
 - Persist one immutable run receipt per submitted graph.
+- Materialize reusable graph drafts only from one Workspace Control export that
+  contains paired UI/API graphs and verified hashes. Parameterize existing
+  literal inputs with expected-value guards; never replace graph links.
+- A full runtime manifest persisted by `probe --output` may support schema
+  validation. A compact public manifest cannot because it omits
+  `_captured_object_info`.
+- Materialized output remains review-gated. Never install, queue, or promote it
+  automatically.
 - Require a semantic operation id, version, and contract hash for every run
   receipt. Treat that reference as opaque provenance; do not interpret CAUCE,
   H3, or project semantics here.

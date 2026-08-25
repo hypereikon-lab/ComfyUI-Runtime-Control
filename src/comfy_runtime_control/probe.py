@@ -58,3 +58,25 @@ def public_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     """Remove the large schema snapshot when a compact receipt only needs its hash."""
 
     return {key: value for key, value in manifest.items() if key != "_captured_object_info"}
+
+
+def validate_runtime_manifest(manifest: Any) -> dict[str, Any]:
+    """Return the captured node schemas after verifying the manifest hashes."""
+
+    if not isinstance(manifest, dict) or manifest.get("schema") != "comfy.runtime-manifest/1":
+        raise ValueError("invalid runtime manifest")
+    object_info = manifest.get("_captured_object_info")
+    if not isinstance(object_info, dict):
+        raise ValueError("runtime manifest does not contain _captured_object_info")
+    expected_manifest_hash = manifest.get("manifest_hash")
+    unhashed = {
+        key: value
+        for key, value in manifest.items()
+        if key not in {"manifest_hash", "_captured_object_info"}
+    }
+    if expected_manifest_hash != content_hash(unhashed):
+        raise ValueError("runtime manifest hash does not match its public fields")
+    endpoint = manifest.get("endpoints", {}).get("object_info", {})
+    if endpoint.get("content_hash") != content_hash(object_info):
+        raise ValueError("runtime manifest object_info hash does not match its snapshot")
+    return object_info

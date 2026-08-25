@@ -5,11 +5,17 @@ import unittest
 
 from comfy_runtime_control.artifacts import artifacts_from_history
 from comfy_runtime_control.client import ComfyClient, RuntimeConfig
+from comfy_runtime_control.canonical import content_hash
 from comfy_runtime_control.compiler import compile_api_template
 from comfy_runtime_control.errors import GraphValidationError, MutationGuardError
 from comfy_runtime_control.jobs import submit_graph, wait_for_job
 from comfy_runtime_control.manager import apply_mutation, install_git_url, plan_custom_node_update
-from comfy_runtime_control.probe import probe_runtime, public_manifest
+from comfy_runtime_control.materialization import (
+    materialize_workspace_export,
+    parameterize_api_graph,
+    write_materialized_draft,
+)
+from comfy_runtime_control.probe import probe_runtime, public_manifest, validate_runtime_manifest
 from comfy_runtime_control.receipts import build_run_receipt, save_receipt
 from comfy_runtime_control.schema import dependency_plan, validate_api_graph
 
@@ -27,6 +33,33 @@ GRAPH = {
         "class_type": "SaveImage",
         "inputs": {"images": ["1", 0], "filename_prefix": "test"},
     },
+}
+
+UI_GRAPH = {"nodes": [{"id": 1, "type": "LoadImage"}], "links": []}
+WORKSPACE_EXPORT = {
+    "schema": "comfy.workspace-export/1",
+    "capturedAt": "2026-08-25T12:00:00Z",
+    "activePath": "workflows/test.json",
+    "uiGraph": UI_GRAPH,
+    "apiGraph": GRAPH,
+    "uiGraphSignature": content_hash(UI_GRAPH),
+    "apiGraphSignature": content_hash(GRAPH),
+}
+PARAMETERIZATION = {
+    "schema": "comfy.api-parameterization/1",
+    "parameters": [
+        {"name": "input_filename", "pointers": ["/1/inputs/image"], "expected": "a.png"},
+        {
+            "name": "output_prefix",
+            "pointers": ["/2/inputs/filename_prefix"],
+            "expected": "test",
+        },
+    ],
+}
+OPERATION_REF = {
+    "id": "generate.keyframed",
+    "version": 1,
+    "contract_hash": "a" * 64,
 }
 
 
@@ -120,6 +153,11 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn("_captured_object_info", compact)
         self.assertNotIn("secret", json.dumps(compact))
         self.assertEqual(transport.calls[0][2]["CF-Access-Client-Id"], "id")
+        self.assertEqual(validate_runtime_manifest(manifest), OBJECT_INFO)
+        tampered = json.loads(json.dumps(manifest))
+        tampered["_captured_object_info"]["LoadImage"]["input"]["required"]["image"][0] = []
+        with self.assertRaisesRegex(ValueError, "object_info hash"):
+            validate_runtime_manifest(tampered)
 
     def test_graph_validation_and_dependency_plan(self):
         report = validate_api_graph(GRAPH, OBJECT_INFO)
@@ -163,6 +201,75 @@ class RuntimeTests(unittest.TestCase):
             compile_api_template(
                 {"1": {"x": {"$binding": "x", "default": 1}}}, {"x": 2}
             )
+
+    def test_workspace_export_materializes_a_round_trip_pair(self):
+        client, _ = self.client()
+        draft = materialize_workspace_export(
+            WORKSPACE_EXPORT,
+            PARAMETERIZATION,
+            OPERATION_REF,
+            "first-last",
+            runtime_manifest=probe_runtime(client),
+        )
+        self.assertEqual(draft.manifest["state"], "schema-validated-draft")
+        self.assertTrue(draft.manifest["round_trip"]["valid"])
+        self.assertEqual(draft.manifest["promotion_gate"], "requires-live-review")
+        self.assertEqual(
+            draft.manifest["runtime_manifest"]["object_info_hash"],
+            content_hash(OBJECT_INFO),
+        )
+        self.assertEqual(
+            draft.api_template["1"]["inputs"]["image"],
+            {"$binding": "input_filename"},
+        )
+        self.assertEqual(draft.bindings["output_prefix"], "test")
+        self.assertEqual(
+            draft.manifest["source"]["api_graph_hash"],
+            content_hash(GRAPH),
+        )
+
+    def test_materialized_draft_writes_four_guarded_products(self):
+        draft = materialize_workspace_export(
+            WORKSPACE_EXPORT,
+            PARAMETERIZATION,
+            OPERATION_REF,
+            "first-last",
+        )
+        self.assertEqual(draft.manifest["state"], "offline-draft")
+        self.assertIsNone(draft.manifest["runtime_manifest"])
+        with tempfile.TemporaryDirectory() as directory:
+            paths = write_materialized_draft(directory, draft)
+            self.assertEqual(len(paths), 4)
+            self.assertTrue(all(Path(path).is_file() for path in paths.values()))
+            with self.assertRaisesRegex(FileExistsError, "refusing to replace"):
+                write_materialized_draft(directory, draft)
+
+    def test_materialization_rejects_tampering_stale_values_and_links(self):
+        tampered = dict(WORKSPACE_EXPORT)
+        tampered["apiGraphSignature"] = "0" * 64
+        with self.assertRaisesRegex(GraphValidationError, "does not match"):
+            materialize_workspace_export(
+                tampered,
+                PARAMETERIZATION,
+                OPERATION_REF,
+                "first-last",
+            )
+        stale = json.loads(json.dumps(PARAMETERIZATION))
+        stale["parameters"][0]["expected"] = "other.png"
+        with self.assertRaisesRegex(GraphValidationError, "does not match expected"):
+            parameterize_api_graph(GRAPH, stale)
+        link = {
+            "schema": "comfy.api-parameterization/1",
+            "parameters": [
+                {
+                    "name": "images_link",
+                    "pointers": ["/2/inputs/images"],
+                    "expected": ["1", 0],
+                }
+            ],
+        }
+        with self.assertRaisesRegex(GraphValidationError, "cannot parameterize a graph link"):
+            parameterize_api_graph(GRAPH, link)
 
     def test_graph_validation_rejects_missing_link_and_enum(self):
         graph = {

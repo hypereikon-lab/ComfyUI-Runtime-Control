@@ -16,6 +16,7 @@ CAUCE, project, prompt, or browser-layout logic.
 | R6 | Targeted Administration | plans and applies one exact Manager custom-node update; guarded Comfy process restart |
 | R7 | Workspace Control | capability probe for the separate browser extension; no tab logic lives here |
 | R8 | Run Registry | immutable receipts binding a semantic operation to graph, runtime, history, and artifacts |
+| R9 | Paired Materialization | verifies one Workspace Control UI/API export, replaces guarded literals with bindings, and emits a review-gated draft pair |
 
 ## Install
 
@@ -68,6 +69,50 @@ required:
 Compilation fails for missing or unused bindings and for any result that does
 not match current live node schemas. Optional branches use separate templates;
 they are not left muted or bypassed in a shared graph.
+
+## UI/API materialization bridge
+
+Workspace Control exports the active browser graph and the API prompt generated
+from that same graph as `comfy.workspace-export/1`. Runtime Control can turn
+that captured pair into a reproducible, variant-scoped draft without inventing
+node ids or reconstructing a browser workflow from conversational memory:
+
+```bash
+comfy-runtime --url https://comfy.example.invalid probe \
+  --output runtime-manifest.json
+
+comfy-runtime materialize-export workspace-export.json parameterization.json \
+  --operation-ref operation-ref.json \
+  --variant first-last \
+  --runtime-manifest runtime-manifest.json \
+  --output-dir drafts
+```
+
+`parameterization.json` names only captured literal inputs and guards each JSON
+pointer with its expected value:
+
+```json
+{
+  "schema": "comfy.api-parameterization/1",
+  "parameters": [
+    {
+      "name": "prompt",
+      "pointers": ["/12/inputs/prompt"],
+      "expected": "captured prompt"
+    }
+  ]
+}
+```
+
+The command verifies both export hashes, rejects graph-link substitution,
+recompiles the resulting template with its captured bindings, and requires the
+compiled API hash to equal the exported API graph hash. With a full probe
+manifest it also validates against the captured `/object_info`. It writes a UI
+graph, API template, bindings, and materialization manifest without overwriting
+existing files by default.
+
+The result remains `requires-live-review`. It is not automatically installed,
+queued, or promoted into an operation repository.
 
 ## Mutation boundary
 

@@ -1,15 +1,65 @@
 # Operational guide
 
-1. Probe reachability and capture the runtime manifest.
-2. Export the desired ComfyUI graph in API format.
-3. Validate that graph against the captured `/object_info`.
-4. Resolve every missing custom-node type before submission.
-5. Submit once and retain the exact prompt id.
-6. Poll its history rather than trusting an ambiguous browser progress display.
-7. Enumerate artifacts only from that history record.
-8. Record the immutable run receipt with the exact semantic operation id,
+1. Probe reachability and persist the full runtime manifest when a graph will be
+   materialized.
+2. Compose and clean one active graph in ComfyUI.
+3. Export its paired UI and API forms through Workspace Control.
+4. Declare guarded parameter pointers and materialize a review-gated draft.
+5. Validate the API graph against the same captured `/object_info`.
+6. Resolve every missing custom-node type before submission.
+7. Submit once and retain the exact prompt id.
+8. Poll its history rather than trusting an ambiguous browser progress display.
+9. Enumerate artifacts only from that history record.
+10. Record the immutable run receipt with the exact semantic operation id,
    version, and contract hash.
-9. Review outputs and separately assign `visually-accepted` or `rejected`.
+11. Review outputs and separately assign `visually-accepted` or `rejected`.
+
+## Paired materialization procedure
+
+Use a Workspace Control export captured from the final active graph, not a UI
+workflow and API prompt saved at different times. Save the full probe result:
+
+```bash
+comfy-runtime --url URL probe --output runtime-manifest.json
+```
+
+Prepare an opaque semantic operation reference and a guarded parameterization:
+
+```json
+{
+  "id": "generate.keyframed",
+  "version": 1,
+  "contract_hash": "<64 lowercase hex characters>"
+}
+```
+
+```json
+{
+  "schema": "comfy.api-parameterization/1",
+  "parameters": [
+    {
+      "name": "first_frame_filename",
+      "pointers": ["/1/inputs/image"],
+      "expected": "captured-first.png"
+    }
+  ]
+}
+```
+
+Then run:
+
+```bash
+comfy-runtime materialize-export workspace-export.json parameterization.json \
+  --operation-ref operation-ref.json \
+  --variant first-last \
+  --runtime-manifest runtime-manifest.json \
+  --output-dir drafts
+```
+
+Review the emitted UI graph and API template together. The manifest state
+`schema-validated-draft` means the captured graph matched the captured schemas
+and round-tripped exactly. It does not mean the graph executed, achieved its
+visual objective, or is ready for automatic promotion.
 
 Manager updates and process restarts are distinct operations. Apply a targeted
 update only while the queue is idle, then restart the ComfyUI Python process if

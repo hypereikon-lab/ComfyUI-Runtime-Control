@@ -14,6 +14,7 @@ from .client import ComfyClient, RuntimeConfig
 from .compiler import compile_api_template
 from .jobs import job_history, submit_graph, wait_for_job
 from .manager import apply_mutation, install_git_url, plan_custom_node_update, reboot_comfy
+from .materialization import materialize_workspace_export, write_materialized_draft
 from .probe import probe_runtime, public_manifest
 from .receipts import build_run_receipt, save_receipt
 from .schema import dependency_plan, validate_api_graph
@@ -31,6 +32,8 @@ def _print(value: Any) -> None:
 
 
 def _client(args: argparse.Namespace) -> ComfyClient:
+    if not args.url:
+        raise ValueError("--url is required for commands that access ComfyUI")
     return ComfyClient(
         RuntimeConfig(
             base_url=args.url,
@@ -43,7 +46,17 @@ def _client(args: argparse.Namespace) -> ComfyClient:
 
 
 def _probe(args: argparse.Namespace) -> int:
-    _print(public_manifest(probe_runtime(_client(args))))
+    manifest = probe_runtime(_client(args))
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    result = public_manifest(manifest)
+    result["full_manifest_output"] = str(Path(args.output)) if args.output else None
+    _print(result)
     return 0
 
 
@@ -185,14 +198,29 @@ def _install_git(args: argparse.Namespace) -> int:
     return 0
 
 
+def _materialize_export(args: argparse.Namespace) -> int:
+    runtime_manifest = _json_file(args.runtime_manifest) if args.runtime_manifest else None
+    draft = materialize_workspace_export(
+        _json_file(args.workspace_export),
+        _json_file(args.parameterization),
+        _json_file(args.operation_ref),
+        args.variant,
+        runtime_manifest=runtime_manifest,
+    )
+    paths = write_materialized_draft(args.output_dir, draft, overwrite=args.overwrite)
+    _print({"manifest": draft.manifest, "files": paths})
+    return 0
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="comfy-runtime")
-    parser.add_argument("--url", required=True, help="ComfyUI origin, for example https://host")
+    parser.add_argument("--url", help="ComfyUI origin, for example https://host")
     parser.add_argument("--request-timeout", type=float, default=30.0)
     parser.add_argument("--client-id")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     probe = subparsers.add_parser("probe", help="R1: capture a runtime manifest")
+    probe.add_argument("--output", help="persist the full manifest including object_info")
     probe.set_defaults(handler=_probe)
 
     validate = subparsers.add_parser("validate", help="R2: validate an API graph")
@@ -251,6 +279,19 @@ def build_parser() -> argparse.ArgumentParser:
     install_git.add_argument("source_url")
     install_git.add_argument("--confirm", required=True)
     install_git.set_defaults(handler=_install_git)
+
+    materialize = subparsers.add_parser(
+        "materialize-export",
+        help="R2/R7: create a guarded variant-scoped UI/API draft from Workspace Control",
+    )
+    materialize.add_argument("workspace_export")
+    materialize.add_argument("parameterization")
+    materialize.add_argument("--operation-ref", required=True)
+    materialize.add_argument("--variant", required=True)
+    materialize.add_argument("--output-dir", required=True)
+    materialize.add_argument("--runtime-manifest")
+    materialize.add_argument("--overwrite", action="store_true")
+    materialize.set_defaults(handler=_materialize_export)
     return parser
 
 
