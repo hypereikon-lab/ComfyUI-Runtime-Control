@@ -15,7 +15,7 @@ CAUCE, project, prompt, or browser-layout logic.
 | R5 | Dependency Planner | reports exact required, available, and missing node types |
 | R6 | Targeted Administration | plans and applies one exact Manager custom-node update; guarded Comfy process restart |
 | R7 | Workspace Control | capability probe for the separate browser extension; no tab logic lives here |
-| R8 | Run Registry | immutable, content-addressed receipts for graph, runtime, history, and artifacts |
+| R8 | Run Registry | immutable receipts binding a semantic operation to graph, runtime, history, and artifacts |
 
 ## Install
 
@@ -41,8 +41,12 @@ comfy-runtime --url https://comfy.example.invalid compile graph.template.json bi
   --output graph.api.json
 comfy-runtime --url https://comfy.example.invalid validate graph.api.json
 comfy-runtime --url https://comfy.example.invalid run graph.api.json \
-  --spec workflow-spec.json --receipts receipts --downloads downloads
+  --operation-ref operation-ref.json --receipts receipts --downloads downloads
 ```
+
+`operation-ref.json` contains a semantic `id`, positive `version`, and SHA-256
+`contract_hash`. Runtime Control treats it as neutral provenance; it does not
+interpret CAUCE or project semantics.
 
 `run` captures one runtime manifest, validates against that schema snapshot,
 submits, waits for the exact prompt id, resolves artifacts, and records an

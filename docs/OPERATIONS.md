@@ -7,7 +7,8 @@
 5. Submit once and retain the exact prompt id.
 6. Poll its history rather than trusting an ambiguous browser progress display.
 7. Enumerate artifacts only from that history record.
-8. Record the immutable run receipt.
+8. Record the immutable run receipt with the exact semantic operation id,
+   version, and contract hash.
 9. Review outputs and separately assign `visually-accepted` or `rejected`.
 
 Manager updates and process restarts are distinct operations. Apply a targeted

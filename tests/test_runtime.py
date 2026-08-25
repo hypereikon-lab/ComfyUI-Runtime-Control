@@ -166,7 +166,11 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(artifacts[0].filename, "x.png")
         manifest = probe_runtime(client)
         receipt = build_run_receipt(
-            workflow_spec={"id": "W0"},
+            operation_ref={
+                "id": "generate.keyframed",
+                "version": 1,
+                "contract_hash": "a" * 64,
+            },
             api_graph=GRAPH,
             runtime_manifest=manifest,
             prompt_id=submitted.prompt_id,
@@ -177,6 +181,22 @@ class RuntimeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as directory:
             path = save_receipt(Path(directory) / "p1.json", receipt)
             self.assertEqual(json.loads(path.read_text())["receipt_hash"], receipt["receipt_hash"])
+        self.assertEqual(receipt["schema"], "comfy.run-receipt/2")
+        self.assertEqual(receipt["operation"], "generate.keyframed")
+
+    def test_receipt_requires_content_addressed_operation(self):
+        client, _ = self.client()
+        manifest = probe_runtime(client)
+        with self.assertRaisesRegex(ValueError, "operation_ref"):
+            build_run_receipt(
+                operation_ref={"id": "invalid"},
+                api_graph=GRAPH,
+                runtime_manifest=manifest,
+                prompt_id="p1",
+                history=None,
+                artifacts=[],
+                evidence_status="executes",
+            )
 
     def test_manager_guard_requires_exact_target(self):
         client, transport = self.client()

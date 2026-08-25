@@ -91,13 +91,17 @@ def _compile_graph(args: argparse.Namespace) -> int:
 def _run(args: argparse.Namespace) -> int:
     client = _client(args)
     graph = _json_file(args.graph)
-    workflow_spec = _json_file(args.spec) if args.spec else None
+    operation_ref = _json_file(args.operation_ref)
     manifest = probe_runtime(client)
     validation = validate_api_graph(graph, manifest.get("_captured_object_info"))
     if not validation["valid"]:
         _print(validation)
         return 2
-    submitted = submit_graph(client, graph, extra_data={"runtime_control": {"validation": validation}})
+    submitted = submit_graph(
+        client,
+        graph,
+        extra_data={"runtime_control": {"validation": validation, "operation": operation_ref}},
+    )
     history = wait_for_job(
         client,
         submitted.prompt_id,
@@ -106,7 +110,7 @@ def _run(args: argparse.Namespace) -> int:
     )
     artifacts = artifacts_from_history(history)
     receipt = build_run_receipt(
-        workflow_spec=workflow_spec,
+        operation_ref=operation_ref,
         api_graph=graph,
         runtime_manifest=manifest,
         prompt_id=submitted.prompt_id,
@@ -208,7 +212,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = subparsers.add_parser("run", help="R2/R3/R4/R8: validate, submit, wait, and receipt")
     run.add_argument("graph")
-    run.add_argument("--spec")
+    run.add_argument("--operation-ref", required=True)
     run.add_argument("--job-timeout", type=float, default=3600.0)
     run.add_argument("--poll-interval", type=float, default=5.0)
     run.add_argument("--receipts", default="receipts")

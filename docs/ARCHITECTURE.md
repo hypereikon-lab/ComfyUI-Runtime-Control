@@ -1,7 +1,7 @@
 # Architecture
 
 ```text
-workflow spec / API template + exact bindings
+operation reference / API template + exact bindings
           |
           v
 deterministic compile -> live /object_info -> schema validation + dependency plan

@@ -14,4 +14,4 @@ __all__ = [
     "MutationGuardError",
 ]
 
-__version__ = "0.1.0"
+__version__ = "0.2.0"

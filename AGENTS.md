@@ -14,6 +14,9 @@ not MiniMax H3, CAUCE, a creative project, or browser layout.
   CUDA/PyTorch update, arbitrary shell, or physical reboot operations.
 - A completed queue item means `executes`, not visual success.
 - Persist one immutable run receipt per submitted graph.
+- Require a semantic operation id, version, and contract hash for every run
+  receipt. Treat that reference as opaque provenance; do not interpret CAUCE,
+  H3, or project semantics here.
 - Preserve dirty worktrees and never force-push.
 
 ## Verification
