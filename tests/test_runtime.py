@@ -73,10 +73,28 @@ class FakeTransport:
         elif path in {"/manager/queue/reset", "/manager/queue/update", "/manager/queue/start"}:
             value = {"ok": True}
         elif path == "/customnode/install/git_url":
-            return 200, {"Content-Type": "text/plain"}, b"installed"
+            value = {"status": "installed"}
         else:
             return 404, {}, b"{}"
         return 200, {"Content-Type": "application/json"}, json.dumps(value).encode()
+
+
+class LegacyGitInstallTransport(FakeTransport):
+    def request(self, method, url, *, headers=None, json_body=None, data=None, timeout=30.0):
+        path = url.split("https://unit.invalid", 1)[-1].split("?", 1)[0]
+        if path == "/customnode/install/git_url":
+            self.calls.append((method, url, headers or {}, json_body, data))
+            if json_body is not None:
+                return 400, {"Content-Type": "text/plain"}, b"expected text/plain"
+            return 200, {"Content-Type": "text/plain"}, b"installed"
+        return super().request(
+            method,
+            url,
+            headers=headers,
+            json_body=json_body,
+            data=data,
+            timeout=timeout,
+        )
 
 
 class RuntimeTests(unittest.TestCase):
@@ -215,7 +233,7 @@ class RuntimeTests(unittest.TestCase):
         )
 
     def test_unknown_update_requires_exact_public_source_and_install_guard(self):
-        client, _ = self.client()
+        client, transport = self.client()
         with self.assertRaisesRegex(ValueError, "source_url"):
             plan_custom_node_update("ComfyUI-Cauce")
         with self.assertRaisesRegex(ValueError, "public HTTPS GitHub"):
@@ -224,6 +242,18 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaises(MutationGuardError):
             install_git_url(client, source, confirmation="https://github.com/owner/other")
         self.assertEqual(install_git_url(client, source, confirmation=source), "installed")
+        install_call = transport.calls[-1]
+        self.assertEqual(install_call[3], {"url": source})
+        self.assertIsNone(install_call[4])
+
+    def test_git_install_falls_back_to_legacy_text_body_only_after_400(self):
+        transport = LegacyGitInstallTransport()
+        client = ComfyClient(RuntimeConfig("https://unit.invalid"), transport)
+        source = "https://github.com/owner/repository"
+        self.assertEqual(install_git_url(client, source, confirmation=source), "installed")
+        self.assertEqual(len(transport.calls), 2)
+        self.assertEqual(transport.calls[0][3], {"url": source})
+        self.assertEqual(transport.calls[1][4], source.encode("utf-8"))
 
     def test_runtime_config_requires_complete_service_token(self):
         with self.assertRaises(ValueError):
