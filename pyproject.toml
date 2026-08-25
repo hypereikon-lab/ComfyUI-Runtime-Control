@@ -1,0 +1,19 @@
+[project]
+name = "comfyui-runtime-control"
+version = "0.1.0"
+description = "Bounded, schema-aware control of a remote ComfyUI HTTP runtime"
+readme = "README.md"
+requires-python = ">=3.10"
+license = { text = "MIT" }
+authors = [{ name = "Hypereikon" }]
+dependencies = []
+
+[project.scripts]
+comfy-runtime = "comfy_runtime_control.cli:main"
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+where = ["src"]
