@@ -1,10 +1,10 @@
 # Architecture
 
 ```text
-workflow spec / API graph
+workflow spec / API template + exact bindings
           |
           v
-live /object_info ----> schema validation + dependency plan
+deterministic compile -> live /object_info -> schema validation + dependency plan
           |                         |
           +-------------------------+
                                     v

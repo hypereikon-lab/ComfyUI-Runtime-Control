@@ -11,6 +11,7 @@ from typing import Any
 
 from .artifacts import artifacts_from_history, download_artifact
 from .client import ComfyClient, RuntimeConfig
+from .compiler import compile_api_template
 from .jobs import job_history, submit_graph, wait_for_job
 from .manager import apply_mutation, plan_custom_node_update, reboot_comfy
 from .probe import probe_runtime, public_manifest
@@ -60,6 +61,31 @@ def _dependencies(args: argparse.Namespace) -> int:
     report = dependency_plan(_json_file(args.graph), client.get("/object_info"))
     _print(report)
     return 0 if report["ready"] else 2
+
+
+def _compile_graph(args: argparse.Namespace) -> int:
+    client = _client(args)
+    compiled = compile_api_template(
+        _json_file(args.template),
+        _json_file(args.bindings),
+        object_info=client.get("/object_info"),
+        reject_unused_bindings=not args.allow_unused_bindings,
+    )
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(compiled.graph, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    _print(
+        {
+            "output": str(output),
+            "api_graph_hash": compiled.graph_hash,
+            "used_bindings": list(compiled.used_bindings),
+            "validation": compiled.validation,
+        }
+    )
+    return 0
 
 
 def _run(args: argparse.Namespace) -> int:
@@ -156,6 +182,13 @@ def build_parser() -> argparse.ArgumentParser:
     dependencies = subparsers.add_parser("dependencies", help="R5: plan node dependencies")
     dependencies.add_argument("graph")
     dependencies.set_defaults(handler=_dependencies)
+
+    compile_graph = subparsers.add_parser("compile", help="R2: bind and live-validate an API graph template")
+    compile_graph.add_argument("template")
+    compile_graph.add_argument("bindings")
+    compile_graph.add_argument("--output", required=True)
+    compile_graph.add_argument("--allow-unused-bindings", action="store_true")
+    compile_graph.set_defaults(handler=_compile_graph)
 
     run = subparsers.add_parser("run", help="R2/R3/R4/R8: validate, submit, wait, and receipt")
     run.add_argument("graph")

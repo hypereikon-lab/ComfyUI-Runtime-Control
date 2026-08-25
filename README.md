@@ -9,7 +9,7 @@ CAUCE, project, prompt, or browser-layout logic.
 | ID | Operation | Implementation |
 | --- | --- | --- |
 | R1 | Runtime Probe | captures route availability, hashes, node schemas, features, and system stats |
-| R2 | Workflow Compiler gate | validates API prompt graphs against live `/object_info` |
+| R2 | Workflow Compiler | resolves explicit template bindings and validates the result against live `/object_info` |
 | R3 | Job Runner | submits `/prompt`, polls exact `/history/{id}`, interrupts or deletes exact jobs |
 | R4 | Artifact Resolver | enumerates history outputs and retrieves authenticated `/view` artifacts |
 | R5 | Dependency Planner | reports exact required, available, and missing node types |
@@ -37,6 +37,8 @@ Interactive Access cookies are intentionally not extracted from a browser.
 
 ```bash
 comfy-runtime --url https://comfy.example.invalid probe
+comfy-runtime --url https://comfy.example.invalid compile graph.template.json bindings.json \
+  --output graph.api.json
 comfy-runtime --url https://comfy.example.invalid validate graph.api.json
 comfy-runtime --url https://comfy.example.invalid run graph.api.json \
   --spec workflow-spec.json --receipts receipts --downloads downloads
@@ -46,6 +48,22 @@ comfy-runtime --url https://comfy.example.invalid run graph.api.json \
 submits, waits for the exact prompt id, resolves artifacts, and records an
 `executes` receipt. Visual acceptance is a later human evidence update, never
 inferred from queue completion.
+
+An API template uses an exact placeholder object wherever a runtime value is
+required:
+
+```json
+{
+  "1": {
+    "class_type": "LoadImage",
+    "inputs": { "image": { "$binding": "input_filename" } }
+  }
+}
+```
+
+Compilation fails for missing or unused bindings and for any result that does
+not match current live node schemas. Optional branches use separate templates;
+they are not left muted or bypassed in a shared graph.
 
 ## Mutation boundary
 

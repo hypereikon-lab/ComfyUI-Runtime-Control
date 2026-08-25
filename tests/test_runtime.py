@@ -5,7 +5,8 @@ import unittest
 
 from comfy_runtime_control.artifacts import artifacts_from_history
 from comfy_runtime_control.client import ComfyClient, RuntimeConfig
-from comfy_runtime_control.errors import MutationGuardError
+from comfy_runtime_control.compiler import compile_api_template
+from comfy_runtime_control.errors import GraphValidationError, MutationGuardError
 from comfy_runtime_control.jobs import submit_graph, wait_for_job
 from comfy_runtime_control.manager import apply_mutation, plan_custom_node_update
 from comfy_runtime_control.probe import probe_runtime, public_manifest
@@ -109,6 +110,39 @@ class RuntimeTests(unittest.TestCase):
         report = validate_api_graph(broken, OBJECT_INFO)
         self.assertFalse(report["valid"])
         self.assertIn("MissingNode", dependency_plan(broken, OBJECT_INFO)["missing_node_types"])
+
+    def test_compiler_binds_and_live_validates_template(self):
+        template = {
+            "1": {
+                "class_type": "LoadImage",
+                "inputs": {"image": {"$binding": "input_filename"}},
+            },
+            "2": {
+                "class_type": "SaveImage",
+                "inputs": {
+                    "images": ["1", 0],
+                    "filename_prefix": {"$binding": "output_prefix"},
+                },
+            },
+        }
+        compiled = compile_api_template(
+            template,
+            {"input_filename": "a.png", "output_prefix": "compiled"},
+            object_info=OBJECT_INFO,
+        )
+        self.assertEqual(compiled.graph["2"]["inputs"]["filename_prefix"], "compiled")
+        self.assertTrue(compiled.validation["valid"])
+        self.assertEqual(compiled.used_bindings, ("input_filename", "output_prefix"))
+
+    def test_compiler_rejects_missing_unused_and_mixed_binding_objects(self):
+        with self.assertRaisesRegex(GraphValidationError, "missing binding"):
+            compile_api_template({"1": {"x": {"$binding": "x"}}}, {})
+        with self.assertRaisesRegex(GraphValidationError, "unused bindings"):
+            compile_api_template({"1": {"x": 1}}, {"unused": 2})
+        with self.assertRaisesRegex(GraphValidationError, "cannot contain other keys"):
+            compile_api_template(
+                {"1": {"x": {"$binding": "x", "default": 1}}}, {"x": 2}
+            )
 
     def test_graph_validation_rejects_missing_link_and_enum(self):
         graph = {
