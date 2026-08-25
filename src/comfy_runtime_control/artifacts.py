@@ -48,7 +48,9 @@ def artifacts_from_history(history: dict[str, Any]) -> list[ArtifactRef]:
 
 
 def download_artifact(client: ComfyClient, artifact: ArtifactRef, root: str | Path) -> Path:
-    relative = PurePosixPath(artifact.subfolder) / artifact.filename
+    relative = PurePosixPath(artifact.subfolder.replace("\\", "/")) / PurePosixPath(
+        artifact.filename.replace("\\", "/")
+    )
     if relative.is_absolute() or ".." in relative.parts:
         raise ValueError("artifact path escapes the download root")
     destination = Path(root).joinpath(*relative.parts)

@@ -193,6 +193,18 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             RuntimeConfig("https://unit.invalid", access_client_id="only-id")
 
+    def test_media_routes_reject_traversal_and_unbounded_types(self):
+        client, _ = self.client()
+        with self.assertRaisesRegex(ValueError, "media root"):
+            client.view_artifact("x.png", "../outside", "output")
+        with self.assertRaisesRegex(ValueError, "directory"):
+            client.artifact_url("nested/x.png", "", "output")
+        with tempfile.TemporaryDirectory() as directory:
+            source = Path(directory) / "x.png"
+            source.write_bytes(b"x")
+            with self.assertRaisesRegex(ValueError, "input or temp"):
+                client.upload_image(source, upload_type="output")
+
 
 if __name__ == "__main__":
     unittest.main()

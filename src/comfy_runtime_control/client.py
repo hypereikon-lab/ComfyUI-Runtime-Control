@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 import json
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import uuid
 from typing import Any
 from urllib.parse import quote, urljoin
@@ -108,6 +108,9 @@ class ComfyClient:
         source_path = Path(source)
         if not source_path.is_file():
             raise ValueError(f"source file does not exist: {source_path}")
+        if upload_type not in {"input", "temp"}:
+            raise ValueError("upload_type must be input or temp")
+        _safe_relative_path(subfolder, "subfolder", allow_empty=True)
         boundary = f"----comfy-runtime-{uuid.uuid4().hex}"
         fields = {
             "type": upload_type,
@@ -150,6 +153,10 @@ class ComfyClient:
             raise ComfyRuntimeError("upload did not return JSON") from exc
 
     def view_artifact(self, filename: str, subfolder: str, artifact_type: str) -> bytes:
+        if artifact_type not in {"input", "output", "temp"}:
+            raise ValueError("artifact_type must be input, output, or temp")
+        _safe_relative_path(subfolder, "subfolder", allow_empty=True)
+        _safe_relative_path(filename, "filename", allow_empty=False, require_basename=True)
         _, body = self.request_bytes(
             "GET",
             "/view",
@@ -158,7 +165,29 @@ class ComfyClient:
         return body
 
     def artifact_url(self, filename: str, subfolder: str, artifact_type: str) -> str:
+        if artifact_type not in {"input", "output", "temp"}:
+            raise ValueError("artifact_type must be input, output, or temp")
+        _safe_relative_path(subfolder, "subfolder", allow_empty=True)
+        _safe_relative_path(filename, "filename", allow_empty=False, require_basename=True)
         query = (
             f"filename={quote(filename)}&subfolder={quote(subfolder)}&type={quote(artifact_type)}"
         )
         return f"{self._url('/view')}?{query}"
+
+
+def _safe_relative_path(
+    value: str,
+    name: str,
+    *,
+    allow_empty: bool,
+    require_basename: bool = False,
+) -> PurePosixPath:
+    if not isinstance(value, str) or (not allow_empty and not value):
+        raise ValueError(f"{name} must be a non-empty string")
+    normalized = value.replace("\\", "/")
+    path = PurePosixPath(normalized)
+    if path.is_absolute() or ".." in path.parts:
+        raise ValueError(f"{name} must remain inside its ComfyUI media root")
+    if require_basename and len(path.parts) != 1:
+        raise ValueError(f"{name} must not contain a directory")
+    return path
