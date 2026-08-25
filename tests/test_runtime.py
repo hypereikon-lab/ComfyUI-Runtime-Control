@@ -8,7 +8,7 @@ from comfy_runtime_control.client import ComfyClient, RuntimeConfig
 from comfy_runtime_control.compiler import compile_api_template
 from comfy_runtime_control.errors import GraphValidationError, MutationGuardError
 from comfy_runtime_control.jobs import submit_graph, wait_for_job
-from comfy_runtime_control.manager import apply_mutation, plan_custom_node_update
+from comfy_runtime_control.manager import apply_mutation, install_git_url, plan_custom_node_update
 from comfy_runtime_control.probe import probe_runtime, public_manifest
 from comfy_runtime_control.receipts import build_run_receipt, save_receipt
 from comfy_runtime_control.schema import dependency_plan, validate_api_graph
@@ -72,6 +72,8 @@ class FakeTransport:
             )
         elif path in {"/manager/queue/reset", "/manager/queue/update", "/manager/queue/start"}:
             value = {"ok": True}
+        elif path == "/customnode/install/git_url":
+            return 200, {"Content-Type": "text/plain"}, b"installed"
         else:
             return 404, {}, b"{}"
         return 200, {"Content-Type": "application/json"}, json.dumps(value).encode()
@@ -178,7 +180,10 @@ class RuntimeTests(unittest.TestCase):
 
     def test_manager_guard_requires_exact_target(self):
         client, transport = self.client()
-        plan = plan_custom_node_update("ComfyUI-Cauce")
+        plan = plan_custom_node_update(
+            "ComfyUI-Cauce",
+            source_url="https://github.com/hypereikon-lab/ComfyUI-Cauce",
+        )
         with self.assertRaises(MutationGuardError):
             apply_mutation(client, plan, confirmation="all")
         response = apply_mutation(client, plan, confirmation="ComfyUI-Cauce")
@@ -188,6 +193,17 @@ class RuntimeTests(unittest.TestCase):
             manager_paths,
             ["/manager/queue/reset", "/manager/queue/update", "/manager/queue/start"],
         )
+
+    def test_unknown_update_requires_exact_public_source_and_install_guard(self):
+        client, _ = self.client()
+        with self.assertRaisesRegex(ValueError, "source_url"):
+            plan_custom_node_update("ComfyUI-Cauce")
+        with self.assertRaisesRegex(ValueError, "public HTTPS GitHub"):
+            plan_custom_node_update("x", source_url="https://example.com/x")
+        source = "https://github.com/owner/repository"
+        with self.assertRaises(MutationGuardError):
+            install_git_url(client, source, confirmation="https://github.com/owner/other")
+        self.assertEqual(install_git_url(client, source, confirmation=source), "installed")
 
     def test_runtime_config_requires_complete_service_token(self):
         with self.assertRaises(ValueError):

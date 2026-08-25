@@ -69,7 +69,11 @@ they are not left muted or bypassed in a shared graph.
 
 ```bash
 comfy-runtime --url URL plan-update ComfyUI-Cauce
-comfy-runtime --url URL apply-update ComfyUI-Cauce --confirm ComfyUI-Cauce
+comfy-runtime --url URL apply-update ComfyUI-Cauce \
+  --version unknown --source-url https://github.com/hypereikon-lab/ComfyUI-Cauce \
+  --confirm ComfyUI-Cauce
+comfy-runtime --url URL install-git https://github.com/owner/public-node-pack \
+  --confirm https://github.com/owner/public-node-pack
 comfy-runtime --url URL restart-comfy --confirm restart-comfy-process
 ```
 

@@ -13,7 +13,7 @@ from .artifacts import artifacts_from_history, download_artifact
 from .client import ComfyClient, RuntimeConfig
 from .compiler import compile_api_template
 from .jobs import job_history, submit_graph, wait_for_job
-from .manager import apply_mutation, plan_custom_node_update, reboot_comfy
+from .manager import apply_mutation, install_git_url, plan_custom_node_update, reboot_comfy
 from .probe import probe_runtime, public_manifest
 from .receipts import build_run_receipt, save_receipt
 from .schema import dependency_plan, validate_api_graph
@@ -149,19 +149,35 @@ def _upload(args: argparse.Namespace) -> int:
 
 
 def _plan_update(args: argparse.Namespace) -> int:
-    plan = plan_custom_node_update(args.target)
+    plan = plan_custom_node_update(
+        args.target, version=args.version, source_url=args.source_url
+    )
     _print({"operation": plan.operation, "target": plan.target, "route": plan.route, "payload": plan.payload})
     return 0
 
 
 def _apply_update(args: argparse.Namespace) -> int:
-    plan = plan_custom_node_update(args.target)
+    plan = plan_custom_node_update(
+        args.target, version=args.version, source_url=args.source_url
+    )
     _print(apply_mutation(_client(args), plan, confirmation=args.confirm))
     return 0
 
 
 def _restart(args: argparse.Namespace) -> int:
     _print(reboot_comfy(_client(args), confirmation=args.confirm))
+    return 0
+
+
+def _install_git(args: argparse.Namespace) -> int:
+    _print(
+        {
+            "source_url": args.source_url,
+            "result": install_git_url(
+                _client(args), args.source_url, confirmation=args.confirm
+            ),
+        }
+    )
     return 0
 
 
@@ -212,16 +228,25 @@ def build_parser() -> argparse.ArgumentParser:
 
     plan_update = subparsers.add_parser("plan-update", help="R6: show a targeted Manager plan")
     plan_update.add_argument("target")
+    plan_update.add_argument("--version", default="unknown")
+    plan_update.add_argument("--source-url")
     plan_update.set_defaults(handler=_plan_update)
 
     apply_update = subparsers.add_parser("apply-update", help="R6: queue one exact Manager update")
     apply_update.add_argument("target")
+    apply_update.add_argument("--version", default="unknown")
+    apply_update.add_argument("--source-url")
     apply_update.add_argument("--confirm", required=True)
     apply_update.set_defaults(handler=_apply_update)
 
     restart = subparsers.add_parser("restart-comfy", help="R6: restart only the ComfyUI process")
     restart.add_argument("--confirm", required=True)
     restart.set_defaults(handler=_restart)
+
+    install_git = subparsers.add_parser("install-git", help="R6: install one exact public GitHub custom-node repository")
+    install_git.add_argument("source_url")
+    install_git.add_argument("--confirm", required=True)
+    install_git.set_defaults(handler=_install_git)
     return parser
 
 
