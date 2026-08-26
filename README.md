@@ -54,6 +54,24 @@ and an idle queue. Model filenames are matched against both `/models` and live
 node-widget choices. Manual checks such as free disk space remain explicit and
 do not masquerade as automatically observed facts.
 
+When Cloudflare provides only an interactive browser session, capture the
+bounded JSON endpoints in that authenticated page and assemble the same
+content-addressed manifest without exporting its cookie:
+
+```bash
+comfy-runtime manifest-from-snapshots \
+  --runtime-label authenticated-browser-handoff \
+  --snapshot features=captures/features.json \
+  --snapshot system_stats=captures/system_stats.json \
+  --snapshot object_info=captures/object_info.json \
+  --snapshot models=captures/models.json \
+  --snapshot queue=captures/queue.json \
+  --output runtime-manifest.json
+```
+
+Only the fixed probe endpoint names are accepted. A snapshot manifest and a
+direct HTTP probe use the same hashes, validation, and readiness evaluation.
+
 ## Typical run
 
 ```bash

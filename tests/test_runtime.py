@@ -15,7 +15,12 @@ from comfy_runtime_control.materialization import (
     parameterize_api_graph,
     write_materialized_draft,
 )
-from comfy_runtime_control.probe import probe_runtime, public_manifest, validate_runtime_manifest
+from comfy_runtime_control.probe import (
+    build_runtime_manifest,
+    probe_runtime,
+    public_manifest,
+    validate_runtime_manifest,
+)
 from comfy_runtime_control.receipts import build_run_receipt, save_receipt
 from comfy_runtime_control.requirements import (
     evaluate_runtime_requirements,
@@ -225,6 +230,29 @@ class RuntimeTests(unittest.TestCase):
         tampered["_captured_object_info"]["LoadImage"]["input"]["required"]["image"][0] = []
         with self.assertRaisesRegex(ValueError, "object_info hash"):
             validate_runtime_manifest(tampered)
+
+    def test_browser_snapshots_build_the_same_validated_manifest_contract(self):
+        captured = {
+            "features": {"supports_preview_metadata": True},
+            "system_stats": {
+                "system": {"ram_total": 64_000_000_000},
+                "devices": [{"name": "RTX 5090", "vram_total": 32_000_000_000}],
+            },
+            "object_info": OBJECT_INFO,
+            "models": [],
+            "queue": {"queue_running": [], "queue_pending": []},
+        }
+        manifest = build_runtime_manifest(
+            captured,
+            runtime_label="authenticated-browser-handoff",
+            captured_at="2026-08-26T12:00:00+00:00",
+        )
+        self.assertEqual(validate_runtime_manifest(manifest), OBJECT_INFO)
+        self.assertFalse(manifest["endpoints"]["extensions"]["available"])
+        self.assertEqual(manifest["endpoints"]["extensions"]["error"], "not captured")
+        self.assertNotIn("_captured_queue", public_manifest(manifest))
+        with self.assertRaisesRegex(ValueError, "unknown probe endpoint"):
+            build_runtime_manifest({"cookie": "secret"}, runtime_label="bad")
 
     def test_graph_validation_and_dependency_plan(self):
         report = validate_api_graph(GRAPH, OBJECT_INFO)

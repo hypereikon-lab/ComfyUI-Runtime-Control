@@ -22,6 +22,12 @@ and `/queue` beside compact endpoint hashes. `public_manifest()` strips all
 large `_captured_*` values from receipts. A readiness report therefore remains
 auditable without putting model inventories or full schemas into every run.
 
+If direct HTTP access is unavailable because Cloudflare authentication exists
+only in the browser, use that page to fetch the same bounded endpoints and pass
+their JSON values to `manifest-from-snapshots`. Never extract the browser
+cookie, paste it into a shell, or mark an endpoint available when it was not
+captured. Omitted endpoints remain explicit failed requirements.
+
 ## Paired materialization procedure
 
 Use a Workspace Control export captured from the final active graph, not a UI

@@ -15,7 +15,7 @@ from .compiler import compile_api_template
 from .jobs import job_history, submit_graph, wait_for_job
 from .manager import apply_mutation, install_git_url, plan_custom_node_update, reboot_comfy
 from .materialization import materialize_workspace_export, write_materialized_draft
-from .probe import probe_runtime, public_manifest
+from .probe import PROBE_ROUTES, build_runtime_manifest, probe_runtime, public_manifest
 from .receipts import build_run_receipt, save_receipt
 from .requirements import evaluate_runtime_requirements
 from .schema import dependency_plan, validate_api_graph
@@ -27,6 +27,10 @@ def _json_file(path: str) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise ValueError(f"{path} must contain a JSON object")
     return value
+
+
+def _json_value(path: str) -> Any:
+    return json.loads(Path(path).read_text(encoding="utf-8"))
 
 
 def _print(value: Any) -> None:
@@ -58,6 +62,28 @@ def _probe(args: argparse.Namespace) -> int:
         )
     result = public_manifest(manifest)
     result["full_manifest_output"] = str(Path(args.output)) if args.output else None
+    _print(result)
+    return 0
+
+
+def _manifest_from_snapshots(args: argparse.Namespace) -> int:
+    captured: dict[str, Any] = {}
+    for declaration in args.snapshot:
+        name, separator, path = declaration.partition("=")
+        if not separator or name not in PROBE_ROUTES or not path:
+            raise ValueError("--snapshot must use one known endpoint name=path")
+        if name in captured:
+            raise ValueError(f"duplicate snapshot endpoint {name!r}")
+        captured[name] = _json_value(path)
+    manifest = build_runtime_manifest(captured, runtime_label=args.runtime_label)
+    output = Path(args.output)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    output.write_text(
+        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+        encoding="utf-8",
+    )
+    result = public_manifest(manifest)
+    result["full_manifest_output"] = str(output)
     _print(result)
     return 0
 
@@ -254,6 +280,20 @@ def build_parser() -> argparse.ArgumentParser:
     probe = subparsers.add_parser("probe", help="R1: capture a runtime manifest")
     probe.add_argument("--output", help="persist the full manifest including object_info")
     probe.set_defaults(handler=_probe)
+
+    snapshots = subparsers.add_parser(
+        "manifest-from-snapshots",
+        help="R1: assemble a manifest from endpoint JSON captured by an authenticated browser",
+    )
+    snapshots.add_argument(
+        "--snapshot",
+        action="append",
+        required=True,
+        help="known endpoint name=JSON path; repeat for each captured endpoint",
+    )
+    snapshots.add_argument("--runtime-label", required=True)
+    snapshots.add_argument("--output", required=True)
+    snapshots.set_defaults(handler=_manifest_from_snapshots)
 
     validate = subparsers.add_parser("validate", help="R2: validate an API graph")
     validate.add_argument("graph")
