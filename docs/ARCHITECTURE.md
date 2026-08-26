@@ -44,3 +44,27 @@ A persisted full runtime manifest includes `_captured_object_info`. Its public
 fields and schema snapshot are independently content-addressed. Compact public
 manifests and run receipts omit the large snapshot and therefore cannot be used
 as materialization schema evidence.
+
+## Durable series path
+
+```text
+explicit serial plan + materialized API graphs + operation references
+  -> one fresh runtime probe and schema snapshot
+  -> validate every graph before mutation
+  -> submit step N
+  -> atomically persist its exact prompt id
+  -> poll /history/{prompt_id}
+  -> immutable receipt and optional artifact download
+  -> submit step N+1
+```
+
+Series state is a recovery journal, not an orchestration guess. Its plan hash,
+step order, status prefix, prompt ids, receipt paths, and receipt hashes are
+content-addressed. A resumed `submitted` step is observed through its stored
+prompt id and is never silently resubmitted. A failed history remains failed;
+it is not promoted to a receipt.
+
+The series layer intentionally does not bind outputs to later inputs or parse
+operation semantics. Production planning owns those decisions, and paired
+materialization must produce each concrete API graph before it can enter an
+executable series.

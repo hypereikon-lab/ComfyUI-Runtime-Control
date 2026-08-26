@@ -17,6 +17,7 @@ CAUCE, project, prompt, or browser-layout logic.
 | R7 | Workspace Control | capability probe for the separate browser extension; no tab logic lives here |
 | R8 | Run Registry | immutable receipts binding a semantic operation to graph, runtime, history, and artifacts |
 | R9 | Paired Materialization | verifies one Workspace Control UI/API export, replaces guarded literals with bindings, and emits a review-gated draft pair |
+| R10 | Durable Series | validates an explicit ordered graph plan once, persists every submitted prompt id, resumes without duplicate submission, and writes one receipt per step |
 
 ## Install
 
@@ -113,6 +114,50 @@ existing files by default.
 
 The result remains `requires-live-review`. It is not automatically installed,
 queued, or promoted into an operation repository.
+
+## Durable serial execution
+
+`run-series` executes already-materialized API graphs in one exact order. It is
+for long production chains whose graph inputs have been bound explicitly; it
+does not infer how one step's artifact should become the next step's input.
+
+```bash
+comfy-runtime --url https://comfy.example.invalid run-series series.json \
+  --state state/series.json \
+  --receipts receipts/series \
+  --downloads downloads/series
+```
+
+The plan is deliberately small and neutral:
+
+```json
+{
+  "schema": "comfy.run-series/1",
+  "id": "forest-branch-a",
+  "steps": [
+    {
+      "id": "segment-01",
+      "graph": "graphs/segment-01.api.json",
+      "operation_ref": "operations/segment-01.json",
+      "depends_on": null
+    },
+    {
+      "id": "segment-02",
+      "graph": "graphs/segment-02.api.json",
+      "operation_ref": "operations/segment-02.json",
+      "depends_on": "segment-01"
+    }
+  ]
+}
+```
+
+All paths are relative to the plan. Before any submission, every graph is
+validated against the same fresh `/object_info` snapshot. After `/prompt`
+returns, the exact prompt id is atomically persisted before polling begins. If
+the process or tunnel disappears, rerunning the same command polls the stored
+id; it does not submit a duplicate. A plan revision changes its hash and cannot
+reuse stale state. Completion remains technical `executes` evidence, not visual
+acceptance.
 
 ## Mutation boundary
 

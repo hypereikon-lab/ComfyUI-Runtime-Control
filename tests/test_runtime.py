@@ -18,6 +18,13 @@ from comfy_runtime_control.materialization import (
 from comfy_runtime_control.probe import probe_runtime, public_manifest, validate_runtime_manifest
 from comfy_runtime_control.receipts import build_run_receipt, save_receipt
 from comfy_runtime_control.schema import dependency_plan, validate_api_graph
+from comfy_runtime_control.series import (
+    SERIES_SCHEMA,
+    STATE_SCHEMA,
+    run_series,
+    validate_series_plan,
+    validate_series_state,
+)
 
 
 OBJECT_INFO = {
@@ -120,6 +127,57 @@ class LegacyGitInstallTransport(FakeTransport):
             if json_body is not None:
                 return 400, {"Content-Type": "text/plain"}, b"expected text/plain"
             return 200, {"Content-Type": "text/plain"}, b"installed"
+        return super().request(
+            method,
+            url,
+            headers=headers,
+            json_body=json_body,
+            data=data,
+            timeout=timeout,
+        )
+
+
+class SeriesTransport(FakeTransport):
+    def __init__(self, *, resumed_prompt_id=None):
+        super().__init__()
+        self.prompt_count = 0
+        self.resumed_prompt_id = resumed_prompt_id
+
+    def request(self, method, url, *, headers=None, json_body=None, data=None, timeout=30.0):
+        path = url.split("https://unit.invalid", 1)[-1].split("?", 1)[0]
+        if path == "/prompt":
+            self.calls.append((method, url, headers or {}, json_body, data))
+            self.prompt_count += 1
+            prompt_id = f"p{self.prompt_count}"
+            value = {"prompt_id": prompt_id, "number": self.prompt_count, "node_errors": {}}
+            return 200, {"Content-Type": "application/json"}, json.dumps(value).encode()
+        if path.startswith("/history/"):
+            self.calls.append((method, url, headers or {}, json_body, data))
+            prompt_id = path.rsplit("/", 1)[-1]
+            allowed = {f"p{number}" for number in range(1, self.prompt_count + 1)}
+            if self.resumed_prompt_id:
+                allowed.add(self.resumed_prompt_id)
+            value = (
+                {
+                    prompt_id: {
+                        "status": {"completed": True},
+                        "outputs": {
+                            "2": {
+                                "images": [
+                                    {
+                                        "filename": f"{prompt_id}.png",
+                                        "subfolder": "series",
+                                        "type": "output",
+                                    }
+                                ]
+                            }
+                        },
+                    }
+                }
+                if prompt_id in allowed
+                else {}
+            )
+            return 200, {"Content-Type": "application/json"}, json.dumps(value).encode()
         return super().request(
             method,
             url,
@@ -377,6 +435,135 @@ class RuntimeTests(unittest.TestCase):
             source.write_bytes(b"x")
             with self.assertRaisesRegex(ValueError, "input or temp"):
                 client.upload_image(source, upload_type="output")
+
+    def _series_fixture(self, directory, *, step_count=2):
+        root = Path(directory)
+        (root / "graphs").mkdir()
+        (root / "operations").mkdir()
+        steps = []
+        previous = None
+        for number in range(1, step_count + 1):
+            step_id = f"step-{number}"
+            graph = root / "graphs" / f"{step_id}.json"
+            operation = root / "operations" / f"{step_id}.json"
+            graph.write_text(json.dumps(GRAPH), encoding="utf-8")
+            operation.write_text(
+                json.dumps(
+                    {
+                        "id": "continue.native_av",
+                        "version": 2,
+                        "contract_hash": f"{number:x}" * 64,
+                    }
+                ),
+                encoding="utf-8",
+            )
+            steps.append(
+                {
+                    "id": step_id,
+                    "graph": f"graphs/{step_id}.json",
+                    "operation_ref": f"operations/{step_id}.json",
+                    "depends_on": previous,
+                }
+            )
+            previous = step_id
+        return {
+            "schema": SERIES_SCHEMA,
+            "id": "unit-series",
+            "steps": steps,
+        }
+
+    def test_series_plan_requires_exact_serial_dependencies_and_safe_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            plan = self._series_fixture(directory)
+            steps, plan_hash = validate_series_plan(plan, root=Path(directory))
+            self.assertEqual([step.id for step in steps], ["step-1", "step-2"])
+            self.assertEqual(len(plan_hash), 64)
+            broken = json.loads(json.dumps(plan))
+            broken["steps"][1]["depends_on"] = None
+            with self.assertRaisesRegex(ValueError, "immediately preceding"):
+                validate_series_plan(broken, root=Path(directory))
+            unsafe = json.loads(json.dumps(plan))
+            unsafe["steps"][0]["graph"] = "../outside.json"
+            with self.assertRaisesRegex(ValueError, "safe relative"):
+                validate_series_plan(unsafe, root=Path(directory))
+
+    def test_series_executes_strictly_serially_and_persists_receipts(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._series_fixture(directory)
+            transport = SeriesTransport()
+            client = ComfyClient(RuntimeConfig("https://unit.invalid"), transport)
+            result = run_series(
+                client,
+                plan,
+                plan_root=root,
+                state_path=root / "state.json",
+                receipts_dir=root / "receipts",
+                timeout=1.0,
+                interval=0.001,
+            )
+            self.assertEqual(result["completed_steps"], ["step-1", "step-2"])
+            self.assertEqual(result["prompt_ids"], ["p1", "p2"])
+            state = json.loads((root / "state.json").read_text())
+            steps, plan_hash = validate_series_plan(plan, root=root)
+            validate_series_state(
+                state,
+                plan_id=plan["id"],
+                plan_hash=plan_hash,
+                steps=steps,
+            )
+            self.assertTrue(all(Path(path).is_file() for path in result["receipts"]))
+            prompt_calls = [call for call in transport.calls if call[1].endswith("/prompt")]
+            self.assertEqual(len(prompt_calls), 2)
+            self.assertEqual(
+                prompt_calls[1][3]["extra_data"]["runtime_control"]["series_step"],
+                "step-2",
+            )
+
+    def test_series_resume_polls_stored_prompt_without_resubmitting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._series_fixture(directory, step_count=1)
+            steps, plan_hash = validate_series_plan(plan, root=root)
+            state = {
+                "schema": STATE_SCHEMA,
+                "plan_id": plan["id"],
+                "plan_hash": plan_hash,
+                "steps": [
+                    {
+                        "id": "step-1",
+                        "status": "submitted",
+                        "prompt_id": "resume-77",
+                        "receipt": None,
+                        "receipt_hash": None,
+                    }
+                ],
+            }
+            state["state_hash"] = content_hash(state)
+            state_path = root / "state.json"
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            transport = SeriesTransport(resumed_prompt_id="resume-77")
+            client = ComfyClient(RuntimeConfig("https://unit.invalid"), transport)
+            result = run_series(
+                client,
+                plan,
+                plan_root=root,
+                state_path=state_path,
+                receipts_dir=root / "receipts",
+                timeout=1.0,
+                interval=0.001,
+            )
+            self.assertEqual(result["prompt_ids"], ["resume-77"])
+            self.assertFalse(any(call[1].endswith("/prompt") for call in transport.calls))
+            tampered = json.loads(state_path.read_text())
+            tampered["steps"][0]["prompt_id"] = "other"
+            with self.assertRaisesRegex(ValueError, "state hash"):
+                validate_series_state(
+                    tampered,
+                    plan_id=plan["id"],
+                    plan_hash=plan_hash,
+                    steps=steps,
+                )
 
 
 if __name__ == "__main__":

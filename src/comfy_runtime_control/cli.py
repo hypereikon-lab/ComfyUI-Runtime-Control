@@ -18,6 +18,7 @@ from .materialization import materialize_workspace_export, write_materialized_dr
 from .probe import probe_runtime, public_manifest
 from .receipts import build_run_receipt, save_receipt
 from .schema import dependency_plan, validate_api_graph
+from .series import run_series
 
 
 def _json_file(path: str) -> dict[str, Any]:
@@ -154,6 +155,22 @@ def _history(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_series(args: argparse.Namespace) -> int:
+    plan_path = Path(args.plan).resolve()
+    result = run_series(
+        _client(args),
+        _json_file(str(plan_path)),
+        plan_root=plan_path.parent,
+        state_path=Path(args.state),
+        receipts_dir=Path(args.receipts),
+        downloads_dir=Path(args.downloads) if args.downloads else None,
+        timeout=args.job_timeout,
+        interval=args.poll_interval,
+    )
+    _print(result)
+    return 0
+
+
 def _upload(args: argparse.Namespace) -> int:
     response = _client(args).upload_image(
         args.source,
@@ -246,6 +263,18 @@ def build_parser() -> argparse.ArgumentParser:
     run.add_argument("--receipts", default="receipts")
     run.add_argument("--downloads")
     run.set_defaults(handler=_run)
+
+    run_series_parser = subparsers.add_parser(
+        "run-series",
+        help="R10: validate and execute a durable serial graph plan",
+    )
+    run_series_parser.add_argument("plan")
+    run_series_parser.add_argument("--state", required=True)
+    run_series_parser.add_argument("--job-timeout", type=float, default=3600.0)
+    run_series_parser.add_argument("--poll-interval", type=float, default=5.0)
+    run_series_parser.add_argument("--receipts", default="receipts")
+    run_series_parser.add_argument("--downloads")
+    run_series_parser.set_defaults(handler=_run_series)
 
     history = subparsers.add_parser("history", help="inspect one exact job")
     history.add_argument("prompt_id")

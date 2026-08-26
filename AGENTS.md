@@ -26,6 +26,10 @@ not MiniMax H3, CAUCE, a creative project, or browser layout.
   receipt. Treat that reference as opaque provenance; do not interpret CAUCE,
   H3, or project semantics here.
 - Preserve dirty worktrees and never force-push.
+- Durable series are strictly serial. Persist a submitted prompt id before
+  polling it, resume that exact id, and require completed steps to form a
+  content-addressed prefix. Never infer H3 continuity or pass artifacts between
+  steps implicitly; each executable graph must already contain exact inputs.
 
 ## Verification
 

@@ -1,0 +1,18 @@
+{
+  "schema": "comfy.run-series/1",
+  "id": "example-series",
+  "steps": [
+    {
+      "id": "segment-01",
+      "graph": "graphs/segment-01.api.json",
+      "operation_ref": "operations/segment-01.json",
+      "depends_on": null
+    },
+    {
+      "id": "segment-02",
+      "graph": "graphs/segment-02.api.json",
+      "operation_ref": "operations/segment-02.json",
+      "depends_on": "segment-01"
+    }
+  ]
+}
