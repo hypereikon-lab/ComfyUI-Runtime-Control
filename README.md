@@ -50,8 +50,9 @@ comfy-runtime check-requirements requirements.json \
 
 The profile may require exact endpoints, node types, alternative node-type
 groups, model filenames, minimum RAM/VRAM, an expected device-name fragment,
-and an idle queue. Model filenames are matched against both `/models` and live
-node-widget choices. Manual checks such as free disk space remain explicit and
+and an idle queue. Exact filenames are matched against live loader choices in
+`/object_info`; the root `/models` route contributes model-category inventory,
+not a recursive file listing. Manual checks such as free disk space remain explicit and
 do not masquerade as automatically observed facts.
 
 When Cloudflare provides only an interactive browser session, capture the

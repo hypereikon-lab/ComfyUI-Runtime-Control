@@ -21,6 +21,8 @@ The full probe keeps content-addressed snapshots of `/object_info`, `/models`,
 and `/queue` beside compact endpoint hashes. `public_manifest()` strips all
 large `_captured_*` values from receipts. A readiness report therefore remains
 auditable without putting model inventories or full schemas into every run.
+On current ComfyUI, `/models` lists model categories; exact filenames are
+checked against the captured loader widgets in `/object_info`.
 
 If direct HTTP access is unavailable because Cloudflare authentication exists
 only in the browser, use that page to fetch the same bounded endpoints and pass
