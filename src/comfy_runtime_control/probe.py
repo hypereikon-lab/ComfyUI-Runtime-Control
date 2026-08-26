@@ -50,14 +50,15 @@ def probe_runtime(client: ComfyClient) -> dict[str, Any]:
         "features": captured.get("features"),
     }
     manifest["manifest_hash"] = content_hash(manifest)
-    manifest["_captured_object_info"] = object_info
+    for name, value in captured.items():
+        manifest[f"_captured_{name}"] = value
     return manifest
 
 
 def public_manifest(manifest: dict[str, Any]) -> dict[str, Any]:
     """Remove the large schema snapshot when a compact receipt only needs its hash."""
 
-    return {key: value for key, value in manifest.items() if key != "_captured_object_info"}
+    return {key: value for key, value in manifest.items() if not key.startswith("_captured_")}
 
 
 def validate_runtime_manifest(manifest: Any) -> dict[str, Any]:
@@ -72,11 +73,16 @@ def validate_runtime_manifest(manifest: Any) -> dict[str, Any]:
     unhashed = {
         key: value
         for key, value in manifest.items()
-        if key not in {"manifest_hash", "_captured_object_info"}
+        if key != "manifest_hash" and not key.startswith("_captured_")
     }
     if expected_manifest_hash != content_hash(unhashed):
         raise ValueError("runtime manifest hash does not match its public fields")
-    endpoint = manifest.get("endpoints", {}).get("object_info", {})
-    if endpoint.get("content_hash") != content_hash(object_info):
-        raise ValueError("runtime manifest object_info hash does not match its snapshot")
+    endpoints = manifest.get("endpoints", {})
+    for key, value in manifest.items():
+        if not key.startswith("_captured_"):
+            continue
+        name = key.removeprefix("_captured_")
+        endpoint = endpoints.get(name, {}) if isinstance(endpoints, dict) else {}
+        if endpoint.get("content_hash") != content_hash(value):
+            raise ValueError(f"runtime manifest {name} hash does not match its snapshot")
     return object_info

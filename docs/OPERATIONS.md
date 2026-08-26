@@ -2,17 +2,25 @@
 
 1. Probe reachability and persist the full runtime manifest when a graph will be
    materialized.
-2. Compose and clean one active graph in ComfyUI.
-3. Export its paired UI and API forms through Workspace Control.
-4. Declare guarded parameter pointers and materialize a review-gated draft.
-5. Validate the API graph against the same captured `/object_info`.
-6. Resolve every missing custom-node type before submission.
-7. Submit once and retain the exact prompt id.
-8. Poll its history rather than trusting an ambiguous browser progress display.
-9. Enumerate artifacts only from that history record.
-10. Record the immutable run receipt with the exact semantic operation id,
+2. Evaluate the project's runtime-requirements profile against that same
+   manifest and stop on any automated gate failure.
+3. Complete declared manual checks such as free storage and local auto-start.
+4. Compose and clean one active graph in ComfyUI.
+5. Export its paired UI and API forms through Workspace Control.
+6. Declare guarded parameter pointers and materialize a review-gated draft.
+7. Validate the API graph against the same captured `/object_info`.
+8. Resolve every missing custom-node type before submission.
+9. Submit once and retain the exact prompt id.
+10. Poll its history rather than trusting an ambiguous browser progress display.
+11. Enumerate artifacts only from that history record.
+12. Record the immutable run receipt with the exact semantic operation id,
    version, and contract hash.
-11. Review outputs and separately assign `visually-accepted` or `rejected`.
+13. Review outputs and separately assign `visually-accepted` or `rejected`.
+
+The full probe keeps content-addressed snapshots of `/object_info`, `/models`,
+and `/queue` beside compact endpoint hashes. `public_manifest()` strips all
+large `_captured_*` values from receipts. A readiness report therefore remains
+auditable without putting model inventories or full schemas into every run.
 
 ## Paired materialization procedure
 

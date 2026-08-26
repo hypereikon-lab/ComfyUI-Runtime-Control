@@ -17,6 +17,10 @@ from comfy_runtime_control.materialization import (
 )
 from comfy_runtime_control.probe import probe_runtime, public_manifest, validate_runtime_manifest
 from comfy_runtime_control.receipts import build_run_receipt, save_receipt
+from comfy_runtime_control.requirements import (
+    evaluate_runtime_requirements,
+    validate_runtime_requirements,
+)
 from comfy_runtime_control.schema import dependency_plan, validate_api_graph
 from comfy_runtime_control.series import (
     SERIES_SCHEMA,
@@ -83,7 +87,12 @@ class FakeTransport:
         elif path == "/features":
             value = {"supports_preview_metadata": True}
         elif path == "/system_stats":
-            value = {"system": {"comfyui_version": "test"}, "devices": []}
+            value = {
+                "system": {"comfyui_version": "test", "ram_total": 64_000_000_000},
+                "devices": [
+                    {"name": "NVIDIA RTX 5090", "type": "cuda", "vram_total": 32_000_000_000}
+                ],
+            }
         elif path == "/extensions":
             value = []
         elif path == "/models":
@@ -226,6 +235,46 @@ class RuntimeTests(unittest.TestCase):
         report = validate_api_graph(broken, OBJECT_INFO)
         self.assertFalse(report["valid"])
         self.assertIn("MissingNode", dependency_plan(broken, OBJECT_INFO)["missing_node_types"])
+
+    def test_runtime_requirements_gate_uses_captured_nodes_models_hardware_and_queue(self):
+        client, _ = self.client()
+        manifest = probe_runtime(client)
+        requirements = {
+            "schema": "comfy.runtime-requirements/1",
+            "id": "unit-core",
+            "required_endpoints": ["object_info", "system_stats", "queue"],
+            "required_node_types": ["LoadImage", "SaveImage"],
+            "node_type_groups": [
+                {"id": "image-loader", "any_of": ["MissingLoader", "LoadImage"]}
+            ],
+            "required_models": ["a.png"],
+            "hardware": {
+                "minimum_total_ram_bytes": 60_000_000_000,
+                "minimum_total_vram_bytes": 30_000_000_000,
+                "device_name_contains": "5090",
+            },
+            "require_queue_idle": True,
+            "manual_checks": ["confirm free storage outside ComfyUI"],
+        }
+        report = evaluate_runtime_requirements(requirements, manifest)
+        self.assertTrue(report["ready"])
+        self.assertEqual(report["checks"]["node_types"]["missing"], [])
+        self.assertEqual(report["checks"]["models"]["missing"], [])
+        self.assertTrue(report["checks"]["queue"]["observed_idle"])
+        self.assertEqual(report["manual_checks"], ["confirm free storage outside ComfyUI"])
+
+        broken = json.loads(json.dumps(requirements))
+        broken["required_node_types"].append("MissingNode")
+        broken["required_models"].append("missing.safetensors")
+        failed = evaluate_runtime_requirements(broken, manifest)
+        self.assertFalse(failed["ready"])
+        self.assertEqual(failed["checks"]["node_types"]["missing"], ["MissingNode"])
+        self.assertEqual(failed["checks"]["models"]["missing"], ["missing.safetensors"])
+
+        malformed = json.loads(json.dumps(requirements))
+        malformed["required_node_types"].append("LoadImage")
+        with self.assertRaisesRegex(ValueError, "duplicates"):
+            validate_runtime_requirements(malformed)
 
     def test_compiler_binds_and_live_validates_template(self):
         template = {

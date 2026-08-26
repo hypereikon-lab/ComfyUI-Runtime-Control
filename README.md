@@ -18,6 +18,7 @@ CAUCE, project, prompt, or browser-layout logic.
 | R8 | Run Registry | immutable receipts binding a semantic operation to graph, runtime, history, and artifacts |
 | R9 | Paired Materialization | verifies one Workspace Control UI/API export, replaces guarded literals with bindings, and emits a review-gated draft pair |
 | R10 | Durable Series | validates an explicit ordered graph plan once, persists every submitted prompt id, resumes without duplicate submission, and writes one receipt per step |
+| R11 | Runtime Requirements | compares a project-supplied compatibility profile with one content-addressed live manifest without mutating the runtime |
 
 ## Install
 
@@ -35,10 +36,29 @@ CF_ACCESS_CLIENT_SECRET
 
 Interactive Access cookies are intentionally not extracted from a browser.
 
+`check-requirements` can operate live or completely offline on a previously
+captured full manifest:
+
+```bash
+comfy-runtime --url https://comfy.example.invalid check-requirements \
+  requirements.json --output runtime-readiness.json
+
+comfy-runtime check-requirements requirements.json \
+  --runtime-manifest runtime-manifest.json \
+  --output runtime-readiness.json
+```
+
+The profile may require exact endpoints, node types, alternative node-type
+groups, model filenames, minimum RAM/VRAM, an expected device-name fragment,
+and an idle queue. Model filenames are matched against both `/models` and live
+node-widget choices. Manual checks such as free disk space remain explicit and
+do not masquerade as automatically observed facts.
+
 ## Typical run
 
 ```bash
 comfy-runtime --url https://comfy.example.invalid probe
+comfy-runtime --url https://comfy.example.invalid check-requirements requirements.json
 comfy-runtime --url https://comfy.example.invalid compile graph.template.json bindings.json \
   --output graph.api.json
 comfy-runtime --url https://comfy.example.invalid validate graph.api.json

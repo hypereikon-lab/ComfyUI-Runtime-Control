@@ -17,6 +17,7 @@ from .manager import apply_mutation, install_git_url, plan_custom_node_update, r
 from .materialization import materialize_workspace_export, write_materialized_draft
 from .probe import probe_runtime, public_manifest
 from .receipts import build_run_receipt, save_receipt
+from .requirements import evaluate_runtime_requirements
 from .schema import dependency_plan, validate_api_graph
 from .series import run_series
 
@@ -68,6 +69,20 @@ def _validate(args: argparse.Namespace) -> int:
     report = validate_api_graph(graph, object_info)
     _print(report)
     return 0 if report["valid"] else 2
+
+
+def _check_requirements(args: argparse.Namespace) -> int:
+    manifest = _json_file(args.runtime_manifest) if args.runtime_manifest else probe_runtime(_client(args))
+    report = evaluate_runtime_requirements(_json_file(args.requirements), manifest)
+    if args.output:
+        output = Path(args.output)
+        output.parent.mkdir(parents=True, exist_ok=True)
+        output.write_text(
+            json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
+            encoding="utf-8",
+        )
+    _print(report)
+    return 0 if report["ready"] else 2
 
 
 def _dependencies(args: argparse.Namespace) -> int:
@@ -243,6 +258,15 @@ def build_parser() -> argparse.ArgumentParser:
     validate = subparsers.add_parser("validate", help="R2: validate an API graph")
     validate.add_argument("graph")
     validate.set_defaults(handler=_validate)
+
+    requirements = subparsers.add_parser(
+        "check-requirements",
+        help="R11: compare a runtime requirements profile with one live or captured manifest",
+    )
+    requirements.add_argument("requirements")
+    requirements.add_argument("--runtime-manifest")
+    requirements.add_argument("--output")
+    requirements.set_defaults(handler=_check_requirements)
 
     dependencies = subparsers.add_parser("dependencies", help="R5: plan node dependencies")
     dependencies.add_argument("graph")

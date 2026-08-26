@@ -30,6 +30,12 @@ not MiniMax H3, CAUCE, a creative project, or browser layout.
   polling it, resume that exact id, and require completed steps to form a
   content-addressed prefix. Never infer H3 continuity or pass artifacts between
   steps implicitly; each executable graph must already contain exact inputs.
+- Runtime requirements are opaque project policy. Evaluate exact endpoints,
+  node types, model filenames, hardware thresholds, and queue state against one
+  full captured manifest; do not reinterpret or silently relax failed gates.
+- Free storage and physical power/recovery are manual checks unless a bounded,
+  authoritative runtime route is available. Never infer them from GPU memory or
+  model lists.
 
 ## Verification
 
