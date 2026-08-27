@@ -13,7 +13,14 @@ from .artifacts import artifacts_from_history, download_artifact
 from .client import ComfyClient, RuntimeConfig
 from .compiler import compile_api_template
 from .jobs import job_history, submit_graph, wait_for_job
-from .manager import apply_mutation, install_git_url, plan_custom_node_update, reboot_comfy
+from .manager import (
+    apply_mutation,
+    install_git_url,
+    plan_custom_node_update,
+    plan_git_install,
+    reboot_comfy,
+    reconcile_git_install,
+)
 from .materialization import materialize_workspace_export, write_materialized_draft
 from .probe import PROBE_ROUTES, build_runtime_manifest, probe_runtime, public_manifest
 from .receipts import build_run_receipt, save_receipt
@@ -245,15 +252,39 @@ def _restart(args: argparse.Namespace) -> int:
 
 
 def _install_git(args: argparse.Namespace) -> int:
+    plan = plan_git_install(
+        args.source_url,
+        visibility_confirmation=args.visibility_confirmation,
+        default_branch=args.default_branch,
+        recovery_channel=args.recovery_channel,
+    )
     _print(
-        {
-            "source_url": args.source_url,
-            "result": install_git_url(
-                _client(args), args.source_url, confirmation=args.confirm
-            ),
-        }
+        install_git_url(
+            _client(args),
+            plan,
+            confirmation=args.confirm,
+            journal_path=args.journal,
+        )
     )
     return 0
+
+
+def _plan_git_install(args: argparse.Namespace) -> int:
+    _print(
+        plan_git_install(
+            args.source_url,
+            visibility_confirmation=args.visibility_confirmation,
+            default_branch=args.default_branch,
+            recovery_channel=args.recovery_channel,
+        ).as_dict()
+    )
+    return 0
+
+
+def _reconcile_git_install(args: argparse.Namespace) -> int:
+    result = reconcile_git_install(_client(args), args.journal)
+    _print(result)
+    return 0 if result["state"] == "reconciled-installed" else 2
 
 
 def _materialize_export(args: argparse.Namespace) -> int:
@@ -368,10 +399,42 @@ def build_parser() -> argparse.ArgumentParser:
     restart.add_argument("--confirm", required=True)
     restart.set_defaults(handler=_restart)
 
-    install_git = subparsers.add_parser("install-git", help="R6: install one exact public GitHub custom-node repository")
+    plan_git = subparsers.add_parser(
+        "plan-git-install",
+        help="R6: validate one Git install and its independent recovery channel",
+    )
+    plan_git.add_argument("source_url")
+    plan_git.add_argument("--visibility-confirmation", required=True, choices=("public",))
+    plan_git.add_argument("--default-branch", required=True)
+    plan_git.add_argument(
+        "--recovery-channel",
+        required=True,
+        choices=("external-operator", "process-supervisor"),
+    )
+    plan_git.set_defaults(handler=_plan_git_install)
+
+    install_git = subparsers.add_parser(
+        "install-git",
+        help="R6: journal and submit one exact public GitHub custom-node repository",
+    )
     install_git.add_argument("source_url")
     install_git.add_argument("--confirm", required=True)
+    install_git.add_argument("--visibility-confirmation", required=True, choices=("public",))
+    install_git.add_argument("--default-branch", required=True)
+    install_git.add_argument(
+        "--recovery-channel",
+        required=True,
+        choices=("external-operator", "process-supervisor"),
+    )
+    install_git.add_argument("--journal", required=True)
     install_git.set_defaults(handler=_install_git)
+
+    reconcile_git = subparsers.add_parser(
+        "reconcile-install",
+        help="R6: reconcile an existing install journal without resubmitting it",
+    )
+    reconcile_git.add_argument("--journal", required=True)
+    reconcile_git.set_defaults(handler=_reconcile_git_install)
 
     materialize = subparsers.add_parser(
         "materialize-export",

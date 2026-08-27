@@ -1,12 +1,15 @@
 [project]
 name = "comfyui-runtime-control"
-version = "0.4.0"
+version = "0.5.0"
 description = "Bounded, schema-aware control of a remote ComfyUI HTTP runtime"
 readme = "README.md"
 requires-python = ">=3.10"
 license = { text = "MIT" }
 authors = [{ name = "Hypereikon" }]
 dependencies = []
+
+[project.urls]
+Repository = "https://github.com/hypereikon-lab/ComfyUI-Runtime-Control"
 
 [project.scripts]
 comfy-runtime = "comfy_runtime_control.cli:main"

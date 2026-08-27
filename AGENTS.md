@@ -18,6 +18,10 @@ not MiniMax H3, CAUCE, a creative project, or browser layout.
   interactive credential prompt without a timeout and make the origin unable
   to serve even its own reboot route. Private installs require a separately
   provisioned non-interactive credential path and an external recovery channel.
+- Persist a new exact install journal before every first-install request. A
+  timeout or transport loss is `outcome-unknown`: reconcile the existing
+  journal against Manager inventory and require a host-side partial-directory
+  check when absent. Never auto-retry or overwrite an install journal.
 - A completed queue item means `executes`, not visual success.
 - Persist one immutable run receipt per submitted graph.
 - Materialize reusable graph drafts only from one Workspace Control export that
@@ -53,3 +57,7 @@ git diff --check
 
 Live checks must begin with `probe`. Do not submit a graph unless its API form
 has been validated against the same runtime manifest.
+
+The laboratory tunnel, frontend, Manager, browser-control, deployment, and
+recovery model is documented in `docs/REMOTE_COMFY_RUNTIME.md`. Keep that
+runtime knowledge here rather than in creative custom-node packages.

@@ -13,7 +13,7 @@ CAUCE, project, prompt, or browser-layout logic.
 | R3 | Job Runner | submits `/prompt`, polls exact `/history/{id}`, interrupts or deletes exact jobs |
 | R4 | Artifact Resolver | enumerates history outputs and retrieves authenticated `/view` artifacts |
 | R5 | Dependency Planner | reports exact required, available, and missing node types |
-| R6 | Targeted Administration | plans and applies one exact Manager custom-node update; guarded Comfy process restart |
+| R6 | Targeted Administration | plans and applies one exact Manager custom-node update; journals first installs and reconciles unknown outcomes; guarded Comfy process restart |
 | R7 | Workspace Control | capability probe for the separate browser extension; no tab logic lives here |
 | R8 | Run Registry | immutable receipts binding a semantic operation to graph, runtime, history, and artifacts |
 | R9 | Paired Materialization | verifies one Workspace Control UI/API export, replaces guarded literals with bindings, and emits a review-gated draft pair |
@@ -113,7 +113,8 @@ they are not left muted or bypassed in a shared graph.
 ## UI/API materialization bridge
 
 Workspace Control exports the active browser graph and the API prompt generated
-from that same graph as `comfy.workspace-export/1`. Runtime Control can turn
+from that same graph as `comfy.workspace-export/2` (and Runtime Control still
+accepts version 1 captures). Runtime Control can turn
 that captured pair into a reproducible, variant-scoped draft without inventing
 node ids or reconstructing a browser workflow from conversational memory:
 
@@ -205,12 +206,27 @@ comfy-runtime --url URL plan-update ComfyUI-Cauce
 comfy-runtime --url URL apply-update ComfyUI-Cauce \
   --version unknown --source-url https://github.com/hypereikon-lab/ComfyUI-Cauce \
   --confirm ComfyUI-Cauce
+comfy-runtime plan-git-install https://github.com/owner/public-node-pack \
+  --visibility-confirmation public --default-branch main \
+  --recovery-channel external-operator
 comfy-runtime --url URL install-git https://github.com/owner/public-node-pack \
+  --visibility-confirmation public --default-branch main \
+  --recovery-channel external-operator \
+  --journal state/install-public-node-pack.json \
   --confirm https://github.com/owner/public-node-pack
+comfy-runtime --url URL reconcile-install \
+  --journal state/install-public-node-pack.json
 comfy-runtime --url URL restart-comfy --confirm restart-comfy-process
 ```
+
+`install-git` persists its exact intent before contacting Manager. If the HTTP
+request disappears, the journal becomes `outcome-unknown`; the command will not
+reuse that path or authorize a retry. `reconcile-install` checks Manager's
+installed inventory and still leaves any partial-directory inspection as an
+explicit host-side action.
 
 There is no update-all, arbitrary shell, filesystem browser, physical reboot,
 model deletion, or GPU-stack mutation command.
 
-See [Architecture](docs/ARCHITECTURE.md) and [Operational guide](docs/OPERATIONS.md).
+See [Architecture](docs/ARCHITECTURE.md), [Operational guide](docs/OPERATIONS.md),
+and [Remote ComfyUI runtime](docs/REMOTE_COMFY_RUNTIME.md).

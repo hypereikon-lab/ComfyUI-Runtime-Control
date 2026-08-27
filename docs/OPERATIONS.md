@@ -110,15 +110,45 @@ Use this protocol:
 3. Confirm that an external operator or process supervisor can restart only
    ComfyUI if the origin blocks. A reboot endpoint on the same origin is not an
    independent recovery channel.
-4. Submit one exact repository URL once.
-5. Treat a client timeout as an unknown outcome, not as permission to resubmit.
-6. Wait for the origin to return, then inspect `/customnode/installed` and the
-   package capability route before deciding whether anything failed.
-7. If the gateway remains unavailable, ask the external operator only to check
+4. Run `plan-git-install` and preserve its public-visibility, branch, and
+   independent-recovery assertions.
+5. Submit one exact repository URL once with a new `--journal` path. Runtime
+   Control writes the intent before making the HTTP request.
+6. Treat a client timeout as an `outcome-unknown`, not as permission to
+   resubmit. Never reuse or delete that journal to bypass the guard.
+7. Wait for the origin to return, then run `reconcile-install`. It inspects
+   `/customnode/installed` but never retries the install.
+8. If the package is not listed, inspect the exact target directory for a
+   partial clone before any retry. The journal deliberately records that this
+   manual check is still required.
+9. Inspect the package capability route before deciding whether anything
+   failed.
+10. If the gateway remains unavailable, ask the external operator only to check
    the ComfyUI process and the tunnel service. Do not change CUDA, PyTorch,
    drivers, models, ComfyUI core, or unrelated node packs.
-8. Once the package exists, use Manager's targeted update queue for later
+11. Once the package exists, use Manager's targeted update queue for later
    revisions; do not repeat the first-install route.
+
+Example:
+
+```bash
+comfy-runtime plan-git-install https://github.com/owner/public-node-pack \
+  --visibility-confirmation public --default-branch main \
+  --recovery-channel external-operator
+
+comfy-runtime --url URL install-git https://github.com/owner/public-node-pack \
+  --visibility-confirmation public --default-branch main \
+  --recovery-channel external-operator \
+  --journal state/install-public-node-pack.json \
+  --confirm https://github.com/owner/public-node-pack
+
+comfy-runtime --url URL reconcile-install \
+  --journal state/install-public-node-pack.json
+```
+
+The successful terminal state is `reconciled-installed`. A
+`reconciled-not-listed` result is not permission to retry: it means the
+host-side partial-directory check remains unresolved.
 
 ### Empirical incident: private clone blocked the origin
 

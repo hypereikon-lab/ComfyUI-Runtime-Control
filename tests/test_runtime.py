@@ -9,7 +9,13 @@ from comfy_runtime_control.canonical import content_hash
 from comfy_runtime_control.compiler import compile_api_template
 from comfy_runtime_control.errors import GraphValidationError, MutationGuardError
 from comfy_runtime_control.jobs import submit_graph, wait_for_job
-from comfy_runtime_control.manager import apply_mutation, install_git_url, plan_custom_node_update
+from comfy_runtime_control.manager import (
+    apply_mutation,
+    install_git_url,
+    plan_custom_node_update,
+    plan_git_install,
+    reconcile_git_install,
+)
 from comfy_runtime_control.materialization import (
     materialize_workspace_export,
     parameterize_api_graph,
@@ -128,6 +134,15 @@ class FakeTransport:
             value = {"ok": True}
         elif path == "/customnode/install/git_url":
             value = {"status": "installed"}
+        elif path == "/customnode/installed":
+            value = {
+                "custom_nodes": [
+                    {
+                        "id": "repository",
+                        "files": ["https://github.com/owner/repository"],
+                    }
+                ]
+            }
         else:
             return 404, {}, b"{}"
         return 200, {"Content-Type": "application/json"}, json.dumps(value).encode()
@@ -141,6 +156,22 @@ class LegacyGitInstallTransport(FakeTransport):
             if json_body is not None:
                 return 400, {"Content-Type": "text/plain"}, b"expected text/plain"
             return 200, {"Content-Type": "text/plain"}, b"installed"
+        return super().request(
+            method,
+            url,
+            headers=headers,
+            json_body=json_body,
+            data=data,
+            timeout=timeout,
+        )
+
+
+class UnknownGitInstallTransport(FakeTransport):
+    def request(self, method, url, *, headers=None, json_body=None, data=None, timeout=30.0):
+        path = url.split("https://unit.invalid", 1)[-1].split("?", 1)[0]
+        if path == "/customnode/install/git_url":
+            self.calls.append((method, url, headers or {}, json_body, data))
+            raise TimeoutError("connection disappeared after submission")
         return super().request(
             method,
             url,
@@ -363,6 +394,30 @@ class RuntimeTests(unittest.TestCase):
             content_hash(GRAPH),
         )
 
+    def test_workspace_export_v2_preserves_extension_provenance(self):
+        exported = dict(WORKSPACE_EXPORT)
+        exported["schema"] = "comfy.workspace-export/2"
+        exported["workspaceControlVersion"] = "0.4.0"
+        exported["activeWorkflow"] = {
+            "path": exported["activePath"],
+            "isModified": False,
+            "isPersisted": True,
+            "isTemporary": False,
+        }
+        exported["graphStats"] = {
+            "uiNodeCount": 1,
+            "uiLinkCount": 0,
+            "apiNodeCount": 2,
+        }
+        draft = materialize_workspace_export(
+            exported,
+            PARAMETERIZATION,
+            OPERATION_REF,
+            "first-last",
+        )
+        self.assertEqual(draft.manifest["source"]["schema"], "comfy.workspace-export/2")
+        self.assertEqual(draft.manifest["source"]["workspace_control_version"], "0.4.0")
+
     def test_materialized_draft_writes_four_guarded_products(self):
         draft = materialize_workspace_export(
             WORKSPACE_EXPORT,
@@ -481,9 +536,28 @@ class RuntimeTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "public HTTPS GitHub"):
             plan_custom_node_update("x", source_url="https://example.com/x")
         source = "https://github.com/owner/repository"
+        plan = plan_git_install(
+            source,
+            visibility_confirmation="public",
+            default_branch="main",
+            recovery_channel="external-operator",
+        )
         with self.assertRaises(MutationGuardError):
-            install_git_url(client, source, confirmation="https://github.com/owner/other")
-        self.assertEqual(install_git_url(client, source, confirmation=source), "installed")
+            install_git_url(
+                client,
+                plan,
+                confirmation="https://github.com/owner/other",
+                journal_path="unused.json",
+            )
+        with tempfile.TemporaryDirectory() as directory:
+            result = install_git_url(
+                client,
+                plan,
+                confirmation=source,
+                journal_path=Path(directory) / "install.json",
+            )
+        self.assertEqual(result["state"], "acknowledged")
+        self.assertEqual(result["result"], "installed")
         install_call = transport.calls[-1]
         self.assertEqual(install_call[3], {"url": source})
         self.assertIsNone(install_call[4])
@@ -492,10 +566,89 @@ class RuntimeTests(unittest.TestCase):
         transport = LegacyGitInstallTransport()
         client = ComfyClient(RuntimeConfig("https://unit.invalid"), transport)
         source = "https://github.com/owner/repository"
-        self.assertEqual(install_git_url(client, source, confirmation=source), "installed")
+        plan = plan_git_install(
+            source,
+            visibility_confirmation="public",
+            default_branch="main",
+            recovery_channel="external-operator",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            result = install_git_url(
+                client,
+                plan,
+                confirmation=source,
+                journal_path=Path(directory) / "install.json",
+            )
+        self.assertEqual(result["result"], "installed")
         self.assertEqual(len(transport.calls), 2)
         self.assertEqual(transport.calls[0][3], {"url": source})
         self.assertEqual(transport.calls[1][4], source.encode("utf-8"))
+
+    def test_git_install_requires_public_visibility_and_independent_recovery(self):
+        source = "https://github.com/owner/repository"
+        with self.assertRaisesRegex(MutationGuardError, "public"):
+            plan_git_install(
+                source,
+                visibility_confirmation="private",
+                default_branch="main",
+                recovery_channel="external-operator",
+            )
+        with self.assertRaisesRegex(MutationGuardError, "recovery_channel"):
+            plan_git_install(
+                source,
+                visibility_confirmation="public",
+                default_branch="main",
+                recovery_channel="same-origin-manager",
+            )
+
+    def test_git_install_persists_unknown_outcome_and_forbids_retry(self):
+        transport = UnknownGitInstallTransport()
+        client = ComfyClient(RuntimeConfig("https://unit.invalid"), transport)
+        source = "https://github.com/owner/repository"
+        plan = plan_git_install(
+            source,
+            visibility_confirmation="public",
+            default_branch="main",
+            recovery_channel="external-operator",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "install.json"
+            with self.assertRaisesRegex(MutationGuardError, "outcome is unknown"):
+                install_git_url(
+                    client,
+                    plan,
+                    confirmation=source,
+                    journal_path=journal,
+                )
+            record = json.loads(journal.read_text(encoding="utf-8"))
+            self.assertEqual(record["state"], "outcome-unknown")
+            self.assertEqual(record["attempt_count"], 1)
+            with self.assertRaisesRegex(MutationGuardError, "reconcile"):
+                install_git_url(
+                    client,
+                    plan,
+                    confirmation=source,
+                    journal_path=journal,
+                )
+
+    def test_git_install_reconciliation_records_inventory_evidence(self):
+        client, _ = self.client()
+        source = "https://github.com/owner/repository"
+        plan = plan_git_install(
+            source,
+            visibility_confirmation="public",
+            default_branch="main",
+            recovery_channel="external-operator",
+        )
+        with tempfile.TemporaryDirectory() as directory:
+            journal = Path(directory) / "install.json"
+            install_git_url(client, plan, confirmation=source, journal_path=journal)
+            result = reconcile_git_install(client, journal)
+        self.assertEqual(result["state"], "reconciled-installed")
+        self.assertFalse(
+            result["reconciliation"]["manual_partial_directory_check_required"]
+        )
+        self.assertFalse(result["reconciliation"]["retry_authorized"])
 
     def test_runtime_config_requires_complete_service_token(self):
         with self.assertRaises(ValueError):

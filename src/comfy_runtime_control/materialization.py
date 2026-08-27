@@ -15,7 +15,9 @@ from .errors import GraphValidationError
 from .probe import validate_runtime_manifest
 
 
-WORKSPACE_EXPORT_SCHEMA = "comfy.workspace-export/1"
+WORKSPACE_EXPORT_SCHEMAS = frozenset(
+    {"comfy.workspace-export/1", "comfy.workspace-export/2"}
+)
 PARAMETERIZATION_SCHEMA = "comfy.api-parameterization/1"
 MATERIALIZATION_DRAFT_SCHEMA = "comfy.materialization-draft/1"
 OPERATION_ID = re.compile(r"^[a-z][a-z0-9_]*(\.[a-z][a-z0-9_]*)+$")
@@ -127,7 +129,7 @@ def _operation_reference(value: Any) -> dict[str, Any]:
 
 
 def _validate_export(value: Any) -> tuple[dict[str, Any], dict[str, Any]]:
-    if not isinstance(value, dict) or value.get("schema") != WORKSPACE_EXPORT_SCHEMA:
+    if not isinstance(value, dict) or value.get("schema") not in WORKSPACE_EXPORT_SCHEMAS:
         raise GraphValidationError("invalid Workspace Control export")
     ui_graph = value.get("uiGraph")
     api_graph = value.get("apiGraph")
@@ -224,9 +226,10 @@ def materialize_workspace_export(
         "operation": operation,
         "variant": variant,
         "source": {
-            "schema": WORKSPACE_EXPORT_SCHEMA,
+            "schema": workspace_export.get("schema"),
             "captured_at": workspace_export.get("capturedAt"),
             "active_path": workspace_export.get("activePath"),
+            "workspace_control_version": workspace_export.get("workspaceControlVersion"),
             "ui_graph_hash": content_hash(ui_graph),
             "api_graph_hash": content_hash(api_graph),
         },
