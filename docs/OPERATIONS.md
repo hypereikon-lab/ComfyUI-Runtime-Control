@@ -89,15 +89,65 @@ On Windows it waits for its clone/install subprocess inside the ComfyUI request,
 so the UI websocket and HTTP origin can become temporarily unresponsive even
 though the Cloudflare service itself has not been changed.
 
+### Hard preflight rule
+
+Use this remote route only for a repository whose public visibility and default
+branch have been verified before the request. A successful authenticated lookup
+from the controlling workstation is not sufficient evidence: the Windows
+account running ComfyUI may have no Git credentials. Do not embed a token in the
+URL, copy browser credentials, or use the production origin to discover whether
+a private clone happens to work.
+
+Private repositories require an explicitly provisioned, non-interactive clone
+mechanism on the host and a recovery path that does not depend on the ComfyUI
+HTTP process. That mechanism is outside Runtime Control's Manager adapter.
+
 Use this protocol:
 
 1. Verify both the Comfy queue and Manager queue are idle.
-2. Submit one exact repository URL once.
-3. Treat a client timeout as an unknown outcome, not as permission to resubmit.
-4. Wait for the origin to return, then inspect `/customnode/installed` and the
+2. Verify the repository is public and its default branch is the intended
+   install target.
+3. Confirm that an external operator or process supervisor can restart only
+   ComfyUI if the origin blocks. A reboot endpoint on the same origin is not an
+   independent recovery channel.
+4. Submit one exact repository URL once.
+5. Treat a client timeout as an unknown outcome, not as permission to resubmit.
+6. Wait for the origin to return, then inspect `/customnode/installed` and the
    package capability route before deciding whether anything failed.
-5. If the gateway remains unavailable, ask the external operator only to check
+7. If the gateway remains unavailable, ask the external operator only to check
    the ComfyUI process and the tunnel service. Do not change CUDA, PyTorch,
    drivers, models, ComfyUI core, or unrelated node packs.
-6. Once the package exists, use Manager's targeted update queue for later
+8. Once the package exists, use Manager's targeted update queue for later
    revisions; do not repeat the first-install route.
+
+### Empirical incident: private clone blocked the origin
+
+On 2026-08-26, the Windows lab runtime received a first-install request for a
+GitHub repository that was still private. Manager entered its Windows clone
+helper and Git waited for interactive credentials. The observable state was:
+
+- the previously loaded ComfyUI page remained visible but stale;
+- new HTTP requests, including `/system_stats`, did not complete;
+- Cloudflare returned `524`, while `cloudflared` itself remained connected;
+- a request to `/manager/reboot` could not recover the process because it
+  depended on the same blocked ComfyUI origin;
+- changing the repository to public after the clone had started did not release
+  the already-running Git process.
+
+The relevant Manager path awaits `core.gitclone_install()`. On Windows that
+path invokes the Git helper through `subprocess.check_call()` without an
+operation timeout. Therefore an interactive credential wait must be treated as
+potentially unbounded, not as a slow clone that is guaranteed to time out.
+
+Recovery is limited and non-destructive:
+
+1. On the host, cancel any GitHub or Git Credential Manager prompt.
+2. If the origin does not resume, stop and relaunch only the ComfyUI process.
+   Do not restart or reconfigure `cloudflared` unless it independently failed.
+3. After recovery, inspect the exact target directory and Manager inventory.
+   A failed clone may leave a partial directory. Remove it only after verifying
+   that it is the incomplete target and with the required deletion approval.
+4. Re-run the install once, only after public visibility has been verified.
+
+This incident is a control-plane failure, not evidence of damaged models,
+drivers, CUDA, the GPU, the tunnel configuration, or other custom-node packs.

@@ -12,6 +12,12 @@ not MiniMax H3, CAUCE, a creative project, or browser layout.
 - Manager changes require an exact custom-node identifier and a matching
   confirmation value. Never provide update-all, core update, model deletion,
   CUDA/PyTorch update, arbitrary shell, or physical reboot operations.
+- The remote Manager Git-URL install path is for repositories verified public
+  before submission. Never test private-repository access through the live
+  ComfyUI origin: on Windows the synchronous Git subprocess can wait for an
+  interactive credential prompt without a timeout and make the origin unable
+  to serve even its own reboot route. Private installs require a separately
+  provisioned non-interactive credential path and an external recovery channel.
 - A completed queue item means `executes`, not visual success.
 - Persist one immutable run receipt per submitted graph.
 - Materialize reusable graph drafts only from one Workspace Control export that
