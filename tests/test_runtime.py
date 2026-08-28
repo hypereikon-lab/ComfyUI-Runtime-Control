@@ -535,6 +535,12 @@ class RuntimeTests(unittest.TestCase):
             plan_custom_node_update("ComfyUI-Cauce")
         with self.assertRaisesRegex(ValueError, "public HTTPS GitHub"):
             plan_custom_node_update("x", source_url="https://example.com/x")
+        with self.assertRaisesRegex(ValueError, "must use version unknown"):
+            plan_custom_node_update(
+                "ComfyUI-Cauce",
+                version="dcb48570b362cbbdcb9d5b739c6b1c0ca278fa40",
+                source_url="https://github.com/hypereikon-lab/ComfyUI-Cauce",
+            )
         source = "https://github.com/owner/repository"
         plan = plan_git_install(
             source,

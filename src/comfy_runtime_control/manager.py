@@ -65,11 +65,16 @@ def plan_custom_node_update(
         "ui_id": normalized,
         "version": normalized_version,
     }
-    if normalized_version == "unknown":
-        if source_url is None:
-            raise ValueError("source_url is required for an unknown Git package")
+    if source_url is not None:
         _validate_git_url(source_url)
+        if normalized_version != "unknown":
+            raise ValueError(
+                "an unregistered Git update must use version unknown; "
+                "an installed commit SHA is observed provenance, not a Manager package version"
+            )
         payload["files"] = [source_url]
+    elif normalized_version == "unknown":
+        raise ValueError("source_url is required for an unknown Git package")
     return MutationPlan(
         operation="custom-node-update",
         target=normalized,

@@ -150,6 +150,13 @@ The successful terminal state is `reconciled-installed`. A
 `reconciled-not-listed` result is not permission to retry: it means the
 host-side partial-directory check remains unresolved.
 
+For a non-Registry Git package, Manager's installed inventory may report the
+current Git commit in `ver`. That SHA is deployment evidence, not a Registry
+package version. A targeted update must still use `--version unknown` together
+with the exact public `--source-url`; passing the observed SHA as `--version`
+can enqueue a successful no-op. Runtime Control rejects that ambiguous
+combination.
+
 ### Empirical incident: private clone blocked the origin
 
 On 2026-08-26, the Windows lab runtime received a first-install request for a
