@@ -82,6 +82,43 @@ update only while the queue is idle, then restart the ComfyUI Python process if
 the changed package contains Python. A short gateway error during restart is
 expected; a persistent error requires the smallest external operator check.
 
+## Updating an already installed public repository
+
+Use Repository Control instead of Manager when all of the following are true:
+
+- the exact custom-node repository is already installed;
+- its configured remote is the expected public GitHub repository;
+- its worktree is clean;
+- the desired revision is a known commit reachable by fast-forward from the
+  current revision; and
+- both the Comfy execution queue and Manager queue are idle.
+
+The bounded sequence is:
+
+```text
+GET /repository-control/v1/repos
+  -> identify one exact repository
+  -> verify clean worktree, public remote, branch, and current SHA
+  -> publish and verify the exact target SHA externally
+  -> POST /repository-control/v1/repos/{repo_id}/plan-fetch
+  -> inspect current_sha, target_sha, branch, remote, and fast_forward=true
+  -> POST /repository-control/v1/repos/{repo_id}/apply-fetch with that plan id
+  -> re-read inventory and verify observed SHA
+  -> POST /manager/reboot only if imported Python changed
+  -> verify representative node schemas after the origin returns
+```
+
+Do not use this route to discover whether a private repository can authenticate,
+to install a missing package, to repair a dirty worktree, to switch branches,
+to force-reset history, or to run arbitrary Git commands. Those states must
+fail closed. A Repository Control update and a Comfy process restart remain two
+separate authorized operations.
+
+Repository Control may update its own clean public clone by the same contract.
+Its newly written Python code becomes active only after the subsequent Comfy
+process restart, so the before/after receipt must retain both the on-disk SHA
+and the post-restart imported capability evidence.
+
 ## First install from an unknown Git URL
 
 Manager's dedicated `POST /customnode/install/git_url` route is synchronous.
@@ -127,7 +164,9 @@ Use this protocol:
    the ComfyUI process and the tunnel service. Do not change CUDA, PyTorch,
    drivers, models, ComfyUI core, or unrelated node packs.
 11. Once the package exists, use Manager's targeted update queue for later
-   revisions; do not repeat the first-install route.
+    revisions, or Repository Control when the installed clone satisfies the
+    clean-public-fast-forward contract above; do not repeat the first-install
+    route.
 
 Example:
 

@@ -631,6 +631,36 @@ Never substitute visible `Update All` for a targeted update. The audited
 Manager update policy is `nightly-comfyui`; a broad update can change core,
 frontend expectations, Manager, and unrelated custom nodes at once.
 
+### Repository Control as the post-install Git plane
+
+Manager remains the installation and process-restart plane. For a custom-node
+repository that is already present, Repository Control supplies a narrower
+post-install update plane: inventory, an immutable fetch plan, and application
+of one verified clean public fast-forward. It intentionally has no install,
+delete, branch-switch, force-reset, arbitrary shell, pip, model, CUDA, or
+physical-machine operation.
+
+The preferred lifecycle is therefore:
+
+```text
+first public installation
+  -> Manager Git install with a persisted intent journal
+  -> reconcile installed inventory
+
+subsequent known revision
+  -> Repository Control inventory
+  -> exact current/target SHA plan
+  -> clean public fast-forward only
+  -> separate Comfy process restart when Python changed
+  -> schema and repository-SHA verification
+```
+
+This distinction matters on the Windows lab host. Manager's synchronous first
+Git install can block the Comfy origin indefinitely when Git waits for private
+repository credentials. Repository Control must never be used to probe that
+condition: a non-public, dirty, divergent, unknown, or branch-changing request
+is rejected before mutation.
+
 ### Security meaning
 
 Installing a custom node is equivalent to authorizing Python code to execute as
@@ -693,6 +723,7 @@ Do not widen Comfy's bind address merely to make an install feature work.
 | Job disappeared from UI | frontend index | query jobs/queue/history directly |
 | WebSocket stopped, queue still running | client connection | reconnect; do not resubmit |
 | Manager reports old SHA | installed clone/update | rerun targeted update after checking refs |
+| Repository Control rejects the plan | Git precondition | resolve public remote, branch, cleanliness, or ancestry explicitly; do not force |
 
 ### End a session
 

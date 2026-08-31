@@ -228,5 +228,11 @@ explicit host-side action.
 There is no update-all, arbitrary shell, filesystem browser, physical reboot,
 model deletion, or GPU-stack mutation command.
 
+For repositories that are already installed, the complementary
+`ComfyUI-Repository-Control` extension is the preferred narrow update plane:
+it inventories one exact clone, plans a known public clean fast-forward, and
+applies only that plan. Manager remains responsible for first installation and
+the separately authorized Comfy process restart.
+
 See [Architecture](docs/ARCHITECTURE.md), [Operational guide](docs/OPERATIONS.md),
 and [Remote ComfyUI runtime](docs/REMOTE_COMFY_RUNTIME.md).
