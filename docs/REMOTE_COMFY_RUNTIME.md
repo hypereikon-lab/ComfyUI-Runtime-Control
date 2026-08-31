@@ -635,10 +635,13 @@ frontend expectations, Manager, and unrelated custom nodes at once.
 
 Manager remains the installation and process-restart plane. For a custom-node
 repository that is already present, Repository Control supplies a narrower
-post-install update plane: inventory, an immutable fetch plan, and application
-of one verified clean public fast-forward. It intentionally has no install,
-delete, branch-switch, force-reset, arbitrary shell, pip, model, CUDA, or
-physical-machine operation.
+post-install update plane: inventory plus one verified clean public
+fast-forward request. Repository Control 1.0.x
+uses `GET /repository-control/v1/repos` followed by one exact
+`POST /repository-control/v1/fast-forward`; the expected head, target, branch
+and remote form its fail-closed compare-and-swap contract. It intentionally has
+no install, delete, branch-switch, force-reset, arbitrary shell, pip, model,
+CUDA, or physical-machine operation.
 
 The preferred lifecycle is therefore:
 
@@ -649,8 +652,7 @@ first public installation
 
 subsequent known revision
   -> Repository Control inventory
-  -> exact current/target SHA plan
-  -> clean public fast-forward only
+  -> exact current/target SHA compare-and-swap fast-forward
   -> separate Comfy process restart when Python changed
   -> schema and repository-SHA verification
 ```

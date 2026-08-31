@@ -295,6 +295,33 @@ class RuntimeTests(unittest.TestCase):
         self.assertFalse(report["valid"])
         self.assertIn("MissingNode", dependency_plan(broken, OBJECT_INFO)["missing_node_types"])
 
+    def test_graph_validation_accepts_frontend_dynamic_combo_children_only(self):
+        schema = {
+            "SaveVideo": {
+                "input": {
+                    "required": {
+                        "video": ["VIDEO"],
+                        "format": ["COMFY_DYNAMICCOMBO_V3"],
+                    }
+                }
+            }
+        }
+        graph = {
+            "1": {
+                "class_type": "SaveVideo",
+                "inputs": {
+                    "video": "opaque-video-fixture",
+                    "format": "auto",
+                    "format.codec": "auto",
+                    "unknown.child": "rejected",
+                },
+            }
+        }
+        report = validate_api_graph(graph, schema)
+        self.assertTrue(report["valid"])
+        self.assertEqual(report["warning_count"], 1)
+        self.assertEqual(report["issues"][0]["input_name"], "unknown.child")
+
     def test_runtime_requirements_gate_uses_captured_nodes_models_hardware_and_queue(self):
         client, _ = self.client()
         manifest = probe_runtime(client)

@@ -93,20 +93,23 @@ Use Repository Control instead of Manager when all of the following are true:
   current revision; and
 - both the Comfy execution queue and Manager queue are idle.
 
-The bounded sequence is:
+The bounded sequence exposed by Repository Control 1.0.x is:
 
 ```text
 GET /repository-control/v1/repos
   -> identify one exact repository
   -> verify clean worktree, public remote, branch, and current SHA
   -> publish and verify the exact target SHA externally
-  -> POST /repository-control/v1/repos/{repo_id}/plan-fetch
-  -> inspect current_sha, target_sha, branch, remote, and fast_forward=true
-  -> POST /repository-control/v1/repos/{repo_id}/apply-fetch with that plan id
+  -> POST /repository-control/v1/fast-forward with repo, branch,
+     expected_head, expected_target, and expected_remote
   -> re-read inventory and verify observed SHA
   -> POST /manager/reboot only if imported Python changed
   -> verify representative node schemas after the origin returns
 ```
+
+The request is a single guarded mutation, not a separately persisted plan-id
+protocol. Its exact expected fields provide the compare-and-swap boundary; the
+response retains before/after repository state.
 
 Do not use this route to discover whether a private repository can authenticate,
 to install a missing package, to repair a dirty worktree, to switch branches,

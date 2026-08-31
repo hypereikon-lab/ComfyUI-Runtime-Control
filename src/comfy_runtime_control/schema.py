@@ -32,6 +32,25 @@ def _all_inputs(node_schema: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
+def _is_dynamic_combo_child(name: str, declared: dict[str, Any]) -> bool:
+    """Recognize frontend-flattened fields such as ``format.codec``.
+
+    Comfy's dynamic-combo widgets serialize selected nested inputs beside the
+    root input. They are executable prompt fields even though `/object_info`
+    declares only the root `COMFY_DYNAMICCOMBO_V3` input.
+    """
+
+    root, separator, _child = name.partition(".")
+    if not separator or root not in declared:
+        return False
+    declaration = declared[root]
+    return (
+        isinstance(declaration, (list, tuple))
+        and bool(declaration)
+        and declaration[0] == "COMFY_DYNAMICCOMBO_V3"
+    )
+
+
 def validate_api_graph(graph: Any, object_info: Any) -> dict[str, Any]:
     issues: list[ValidationIssue] = []
     referenced_types: set[str] = set()
@@ -72,10 +91,12 @@ def validate_api_graph(graph: Any, object_info: Any) -> dict[str, Any]:
                     ValidationIssue("error", "missing_input", node_id, name, "required input is missing")
                 )
         for name, value in supplied.items():
-            if name not in declared:
+            if name not in declared and not _is_dynamic_combo_child(name, declared):
                 issues.append(
                     ValidationIssue("warning", "unknown_input", node_id, name, "input is absent from live schema")
                 )
+                continue
+            if name not in declared:
                 continue
             if isinstance(value, list) and len(value) == 2 and isinstance(value[0], (str, int)):
                 if str(value[0]) not in node_ids:
