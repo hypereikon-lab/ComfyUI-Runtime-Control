@@ -11,6 +11,10 @@ from urllib.parse import quote, urljoin
 
 from .errors import ComfyRuntimeError
 from .transport import Transport, UrlLibTransport, with_query
+from .version import __version__
+
+
+DEFAULT_USER_AGENT = f"comfy-runtime-control/{__version__}"
 
 
 @dataclass(frozen=True)
@@ -20,6 +24,7 @@ class RuntimeConfig:
     client_id: str = ""
     access_client_id: str | None = None
     access_client_secret: str | None = None
+    user_agent: str = DEFAULT_USER_AGENT
 
     def __post_init__(self) -> None:
         if not self.base_url.startswith(("http://", "https://")):
@@ -28,6 +33,8 @@ class RuntimeConfig:
             raise ValueError("both Cloudflare Access service-token values are required")
         if self.timeout <= 0:
             raise ValueError("timeout must be positive")
+        if not self.user_agent or "\r" in self.user_agent or "\n" in self.user_agent:
+            raise ValueError("user_agent must be a non-empty single-line value")
 
 
 class ComfyClient:
@@ -44,7 +51,10 @@ class ComfyClient:
         return urljoin(self.config.base_url.rstrip("/") + "/", path.lstrip("/"))
 
     def _headers(self) -> dict[str, str]:
-        headers = {"Accept": "application/json"}
+        headers = {
+            "Accept": "application/json",
+            "User-Agent": self.config.user_agent,
+        }
         if self.config.access_client_id and self.config.access_client_secret:
             headers["CF-Access-Client-Id"] = self.config.access_client_id
             headers["CF-Access-Client-Secret"] = self.config.access_client_secret

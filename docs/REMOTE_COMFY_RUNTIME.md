@@ -312,6 +312,14 @@ For clients that cannot attach headers to WebSocket upgrades, use HTTP polling
 as a fallback or establish an authenticated application session through a
 supported machine flow. Do not work around this by copying browser cookies.
 
+The protected hostname also has Cloudflare Browser Integrity Check enabled.
+An otherwise valid service-token request made with Python's default
+`Python-urllib/...` User-Agent was accepted by Access but rejected at the zone
+layer with Error 1010. Runtime Control 0.5.3 and later therefore send a stable,
+explicit `comfy-runtime-control/<version>` User-Agent on every request. Keep
+that product identifier rather than impersonating a browser or disabling BIC;
+browser-fingerprint emulation is not required for this origin.
+
 ### On-host client
 
 A runner executed on the laboratory tower can use

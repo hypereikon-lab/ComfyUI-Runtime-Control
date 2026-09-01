@@ -1,5 +1,6 @@
 """Schema-aware, bounded ComfyUI runtime control."""
 
+from .version import __version__
 from .client import ComfyClient, RuntimeConfig
 from .compiler import CompiledGraph, compile_api_template
 from .errors import ComfyRuntimeError, GraphValidationError, MutationGuardError
@@ -13,5 +14,3 @@ __all__ = [
     "GraphValidationError",
     "MutationGuardError",
 ]
-
-__version__ = "0.5.2"

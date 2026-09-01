@@ -256,6 +256,9 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn("_captured_object_info", compact)
         self.assertNotIn("secret", json.dumps(compact))
         self.assertEqual(transport.calls[0][2]["CF-Access-Client-Id"], "id")
+        self.assertEqual(
+            transport.calls[0][2]["User-Agent"], "comfy-runtime-control/0.5.3"
+        )
         self.assertEqual(validate_runtime_manifest(manifest), OBJECT_INFO)
         tampered = json.loads(json.dumps(manifest))
         tampered["_captured_object_info"]["LoadImage"]["input"]["required"]["image"][0] = []
@@ -686,6 +689,8 @@ class RuntimeTests(unittest.TestCase):
     def test_runtime_config_requires_complete_service_token(self):
         with self.assertRaises(ValueError):
             RuntimeConfig("https://unit.invalid", access_client_id="only-id")
+        with self.assertRaisesRegex(ValueError, "single-line"):
+            RuntimeConfig("https://unit.invalid", user_agent="invalid\nheader")
 
     def test_media_routes_reject_traversal_and_unbounded_types(self):
         client, _ = self.client()
