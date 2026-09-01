@@ -5,8 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 import json
 from pathlib import Path, PurePosixPath
+from typing import Any, BinaryIO
 import uuid
-from typing import Any
 from urllib.parse import quote, urljoin
 
 from .errors import ComfyRuntimeError
@@ -101,6 +101,32 @@ class ComfyClient:
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise ComfyRuntimeError(f"{path} did not return JSON") from exc
 
+    def request_into(
+        self,
+        method: str,
+        path: str,
+        destination: BinaryIO,
+        *,
+        query: dict[str, str] | None = None,
+    ) -> tuple[dict[str, str], int]:
+        """Stream a response when supported, with a bounded in-memory fallback."""
+        url = with_query(self._url(path), query or {})
+        request_into = getattr(self.transport, "request_into", None)
+        if callable(request_into):
+            status, response_headers, written = request_into(
+                method,
+                url,
+                destination,
+                headers=self._headers(),
+                timeout=self.config.timeout,
+            )
+            if not 200 <= status < 300:
+                raise ComfyRuntimeError(f"unexpected HTTP {status} for {method} {path}")
+            return response_headers, written
+        response_headers, body = self.request_bytes(method, path, query=query)
+        destination.write(body)
+        return response_headers, len(body)
+
     def get(self, path: str, *, query: dict[str, str] | None = None) -> Any:
         return self.request_json("GET", path, query=query)
 
@@ -173,6 +199,24 @@ class ComfyClient:
             query={"filename": filename, "subfolder": subfolder, "type": artifact_type},
         )
         return body
+
+    def stream_artifact(
+        self,
+        filename: str,
+        subfolder: str,
+        artifact_type: str,
+        destination: BinaryIO,
+    ) -> tuple[dict[str, str], int]:
+        if artifact_type not in {"input", "output", "temp"}:
+            raise ValueError("artifact_type must be input, output, or temp")
+        _safe_relative_path(subfolder, "subfolder", allow_empty=True)
+        _safe_relative_path(filename, "filename", allow_empty=False, require_basename=True)
+        return self.request_into(
+            "GET",
+            "/view",
+            destination,
+            query={"filename": filename, "subfolder": subfolder, "type": artifact_type},
+        )
 
     def artifact_url(self, filename: str, subfolder: str, artifact_type: str) -> str:
         if artifact_type not in {"input", "output", "temp"}:

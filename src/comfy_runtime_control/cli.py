@@ -9,7 +9,11 @@ from pathlib import Path
 import sys
 from typing import Any
 
-from .artifacts import artifacts_from_history, download_artifact
+from .artifacts import (
+    artifacts_from_history,
+    download_artifact,
+    unique_physical_artifacts,
+)
 from .client import ComfyClient, RuntimeConfig
 from .compiler import compile_api_template
 from .jobs import job_history, submit_graph, wait_for_job
@@ -203,6 +207,96 @@ def _history(args: argparse.Namespace) -> int:
     return 0
 
 
+def _artifacts(args: argparse.Namespace) -> int:
+    history = job_history(_client(args), args.prompt_id)
+    if history is None:
+        raise ValueError(f"no history exists for prompt_id {args.prompt_id!r}")
+    artifacts = artifacts_from_history(history)
+    _print(
+        {
+            "prompt_id": args.prompt_id,
+            "artifact_count": len(artifacts),
+            "artifacts": [artifact.as_dict() for artifact in artifacts],
+        }
+    )
+    return 0
+
+
+def _recent_artifacts(args: argparse.Namespace) -> int:
+    if not 1 <= args.limit <= 500:
+        raise ValueError("--limit must be between 1 and 500")
+    history_index = _client(args).get(
+        "/history",
+        query={"max_items": str(args.limit)},
+    )
+    if not isinstance(history_index, dict):
+        raise ValueError("history index must be an object")
+    jobs: list[dict[str, Any]] = []
+    artifact_count = 0
+    for prompt_id, history in history_index.items():
+        if not isinstance(history, dict):
+            continue
+        artifacts = artifacts_from_history(history)
+        if args.filename:
+            artifacts = [
+                artifact for artifact in artifacts if artifact.filename == args.filename
+            ]
+        if not artifacts:
+            continue
+        artifact_count += len(artifacts)
+        jobs.append(
+            {
+                "prompt_id": str(prompt_id),
+                "artifact_count": len(artifacts),
+                "artifacts": [artifact.as_dict() for artifact in artifacts],
+            }
+        )
+    _print(
+        {
+            "requested_history_limit": args.limit,
+            "filename_filter": args.filename,
+            "job_count": len(jobs),
+            "artifact_count": artifact_count,
+            "jobs": jobs,
+        }
+    )
+    return 0
+
+
+def _download_artifacts(args: argparse.Namespace) -> int:
+    client = _client(args)
+    history = job_history(client, args.prompt_id)
+    if history is None:
+        raise ValueError(f"no history exists for prompt_id {args.prompt_id!r}")
+    artifacts = unique_physical_artifacts(artifacts_from_history(history))
+    if args.type != "all":
+        artifacts = [artifact for artifact in artifacts if artifact.artifact_type == args.type]
+    downloaded: list[dict[str, Any]] = []
+    for artifact in artifacts:
+        path = download_artifact(
+            client,
+            artifact,
+            args.downloads,
+            overwrite=args.overwrite,
+        )
+        downloaded.append(
+            {
+                "path": str(path),
+                "bytes": path.stat().st_size,
+                "artifact": artifact.as_dict(),
+            }
+        )
+    _print(
+        {
+            "prompt_id": args.prompt_id,
+            "artifact_type": args.type,
+            "download_count": len(downloaded),
+            "downloads": downloaded,
+        }
+    )
+    return 0
+
+
 def _run_series(args: argparse.Namespace) -> int:
     plan_path = Path(args.plan).resolve()
     result = run_series(
@@ -374,6 +468,35 @@ def build_parser() -> argparse.ArgumentParser:
     history = subparsers.add_parser("history", help="inspect one exact job")
     history.add_argument("prompt_id")
     history.set_defaults(handler=_history)
+
+    artifacts = subparsers.add_parser(
+        "artifacts",
+        help="R4: enumerate every artifact referenced by one exact job",
+    )
+    artifacts.add_argument("prompt_id")
+    artifacts.set_defaults(handler=_artifacts)
+
+    recent_artifacts = subparsers.add_parser(
+        "recent-artifacts",
+        help="R4: enumerate artifacts from a bounded recent-history window",
+    )
+    recent_artifacts.add_argument("--limit", type=int, default=20)
+    recent_artifacts.add_argument("--filename", help="match one exact artifact basename")
+    recent_artifacts.set_defaults(handler=_recent_artifacts)
+
+    download_artifacts_parser = subparsers.add_parser(
+        "download-artifacts",
+        help="R4: stream artifacts from one exact job into a local directory",
+    )
+    download_artifacts_parser.add_argument("prompt_id")
+    download_artifacts_parser.add_argument("--downloads", required=True)
+    download_artifacts_parser.add_argument(
+        "--type",
+        choices=("output", "input", "temp", "all"),
+        default="output",
+    )
+    download_artifacts_parser.add_argument("--overwrite", action="store_true")
+    download_artifacts_parser.set_defaults(handler=_download_artifacts)
 
     upload = subparsers.add_parser("upload", help="upload one explicit input file")
     upload.add_argument("source")

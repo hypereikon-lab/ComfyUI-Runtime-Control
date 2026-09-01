@@ -13,9 +13,13 @@
 9. Submit once and retain the exact prompt id.
 10. Poll its history rather than trusting an ambiguous browser progress display.
 11. Enumerate artifacts only from that history record.
-12. Record the immutable run receipt with the exact semantic operation id,
-   version, and contract hash.
-13. Review outputs and separately assign `visually-accepted` or `rejected`.
+12. Use bounded `recent-artifacts`, `artifacts PROMPT_ID`, and
+    `download-artifacts PROMPT_ID --downloads DIR` for existing jobs; downloads
+    stream to a temporary file and refuse local replacement unless
+    `--overwrite` is explicit.
+13. Record the immutable run receipt with the exact semantic operation id,
+    version, and contract hash.
+14. Review outputs and separately assign `visually-accepted` or `rejected`.
 
 The full probe keeps content-addressed snapshots of `/object_info`, `/models`,
 and `/queue` beside compact endpoint hashes. `public_manifest()` strips all

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Protocol
+from typing import Any, BinaryIO, Protocol
 from urllib.error import HTTPError, URLError
 from urllib.parse import urlencode
 from urllib.request import Request, urlopen
@@ -45,6 +45,36 @@ class UrlLibTransport:
         try:
             with urlopen(request, timeout=timeout) as response:
                 return response.status, dict(response.headers.items()), response.read()
+        except HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise ComfyRuntimeError(f"HTTP {exc.code} for {method} {url}: {body[:500]}") from exc
+        except URLError as exc:
+            raise ComfyRuntimeError(f"request failed for {method} {url}: {exc.reason}") from exc
+
+    def request_into(
+        self,
+        method: str,
+        url: str,
+        destination: BinaryIO,
+        *,
+        headers: dict[str, str] | None = None,
+        timeout: float = 30.0,
+        chunk_size: int = 1024 * 1024,
+    ) -> tuple[int, dict[str, str], int]:
+        """Stream one response into an already-open binary destination."""
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be positive")
+        request = Request(url, headers=dict(headers or {}), method=method.upper())
+        try:
+            with urlopen(request, timeout=timeout) as response:
+                written = 0
+                while True:
+                    chunk = response.read(chunk_size)
+                    if not chunk:
+                        break
+                    destination.write(chunk)
+                    written += len(chunk)
+                return response.status, dict(response.headers.items()), written
         except HTTPError as exc:
             body = exc.read().decode("utf-8", errors="replace")
             raise ComfyRuntimeError(f"HTTP {exc.code} for {method} {url}: {body[:500]}") from exc

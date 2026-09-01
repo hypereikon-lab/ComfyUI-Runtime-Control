@@ -3,7 +3,12 @@ import json
 import tempfile
 import unittest
 
-from comfy_runtime_control.artifacts import artifacts_from_history
+from comfy_runtime_control.artifacts import (
+    ArtifactRef,
+    artifacts_from_history,
+    download_artifact,
+    unique_physical_artifacts,
+)
 from comfy_runtime_control.client import ComfyClient, RuntimeConfig
 from comfy_runtime_control.canonical import content_hash
 from comfy_runtime_control.compiler import compile_api_template
@@ -130,6 +135,8 @@ class FakeTransport:
                     }
                 }
             )
+        elif path == "/view":
+            return 200, {"Content-Type": "video/mp4"}, b"artifact-bytes"
         elif path in {"/manager/queue/reset", "/manager/queue/update", "/manager/queue/start"}:
             value = {"ok": True}
         elif path == "/customnode/install/git_url":
@@ -257,7 +264,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn("secret", json.dumps(compact))
         self.assertEqual(transport.calls[0][2]["CF-Access-Client-Id"], "id")
         self.assertEqual(
-            transport.calls[0][2]["User-Agent"], "comfy-runtime-control/0.5.3"
+            transport.calls[0][2]["User-Agent"], "comfy-runtime-control/0.6.0"
         )
         self.assertEqual(validate_runtime_manifest(manifest), OBJECT_INFO)
         tampered = json.loads(json.dumps(manifest))
@@ -528,6 +535,33 @@ class RuntimeTests(unittest.TestCase):
             self.assertEqual(json.loads(path.read_text())["receipt_hash"], receipt["receipt_hash"])
         self.assertEqual(receipt["schema"], "comfy.run-receipt/2")
         self.assertEqual(receipt["operation"], "generate.keyframed")
+
+    def test_artifact_download_is_safe_atomic_and_deduplicated(self):
+        client, _ = self.client()
+        artifact = ArtifactRef(
+            node_id="2",
+            channel="videos",
+            filename="result.mp4",
+            subfolder="video\\day",
+            artifact_type="output",
+        )
+        duplicate = ArtifactRef(
+            node_id="3",
+            channel="previews",
+            filename="result.mp4",
+            subfolder="video\\day",
+            artifact_type="output",
+        )
+        self.assertEqual(unique_physical_artifacts([artifact, duplicate]), [artifact])
+        with tempfile.TemporaryDirectory() as directory:
+            destination = download_artifact(client, artifact, directory)
+            self.assertEqual(destination.read_bytes(), b"artifact-bytes")
+            self.assertFalse(any(destination.parent.glob("*.part")))
+            with self.assertRaisesRegex(FileExistsError, "refusing to overwrite"):
+                download_artifact(client, artifact, directory)
+            destination.write_bytes(b"stale")
+            download_artifact(client, artifact, directory, overwrite=True)
+            self.assertEqual(destination.read_bytes(), b"artifact-bytes")
 
     def test_receipt_requires_content_addressed_operation(self):
         client, _ = self.client()

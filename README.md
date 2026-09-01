@@ -94,6 +94,25 @@ submits, waits for the exact prompt id, resolves artifacts, and records an
 `executes` receipt. Visual acceptance is a later human evidence update, never
 inferred from queue completion.
 
+Existing job outputs can be enumerated and downloaded without reopening their
+workflow in the frontend:
+
+```bash
+comfy-runtime --url https://comfy.example.invalid recent-artifacts --limit 20
+comfy-runtime --url https://comfy.example.invalid recent-artifacts --limit 100 \
+  --filename exact-output.mp4
+comfy-runtime --url https://comfy.example.invalid artifacts PROMPT_ID
+comfy-runtime --url https://comfy.example.invalid download-artifacts PROMPT_ID \
+  --downloads "$PWD/downloads"
+```
+
+The recent-history lookup is explicitly bounded to at most 500 jobs and an
+optional filename match is exact. Downloads are resolved only from one exact
+history record, streamed into a temporary file, and atomically finalized
+beneath the requested directory. The
+default downloads only `output` artifacts and refuses to replace a local file;
+use `--type all` or `--overwrite` only when that broader behavior is explicit.
+
 An API template uses an exact placeholder object wherever a runtime value is
 required:
 
