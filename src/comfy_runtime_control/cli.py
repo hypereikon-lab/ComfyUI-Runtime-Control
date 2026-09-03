@@ -14,6 +14,8 @@ from .artifacts import (
     download_artifact,
     unique_physical_artifacts,
 )
+from .availability import observe_availability
+from .batch import run_batch
 from .client import ComfyClient, RuntimeConfig
 from .compiler import compile_api_template
 from .jobs import job_history, submit_graph, wait_for_job
@@ -118,6 +120,16 @@ def _check_requirements(args: argparse.Namespace) -> int:
             json.dumps(report, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
             encoding="utf-8",
         )
+    _print(report)
+    return 0 if report["ready"] else 2
+
+
+def _observe_availability(args: argparse.Namespace) -> int:
+    report = observe_availability(
+        _client(args),
+        _json_file(args.policy),
+        state_path=args.state,
+    )
     _print(report)
     return 0 if report["ready"] else 2
 
@@ -313,6 +325,22 @@ def _run_series(args: argparse.Namespace) -> int:
     return 0
 
 
+def _run_batch(args: argparse.Namespace) -> int:
+    plan_path = Path(args.plan).resolve()
+    result = run_batch(
+        _client(args),
+        _json_file(str(plan_path)),
+        plan_root=plan_path.parent,
+        state_path=Path(args.state),
+        receipts_dir=Path(args.receipts),
+        downloads_dir=Path(args.downloads) if args.downloads else None,
+        timeout=args.job_timeout,
+        interval=args.poll_interval,
+    )
+    _print(result)
+    return 0
+
+
 def _upload(args: argparse.Namespace) -> int:
     response = _client(args).upload_image(
         args.source,
@@ -433,6 +461,14 @@ def build_parser() -> argparse.ArgumentParser:
     requirements.add_argument("--output")
     requirements.set_defaults(handler=_check_requirements)
 
+    availability = subparsers.add_parser(
+        "observe-availability",
+        help="R13: persist one shared-host resource observation and stability window",
+    )
+    availability.add_argument("policy")
+    availability.add_argument("--state", required=True)
+    availability.set_defaults(handler=_observe_availability)
+
     dependencies = subparsers.add_parser("dependencies", help="R5: plan node dependencies")
     dependencies.add_argument("graph")
     dependencies.set_defaults(handler=_dependencies)
@@ -464,6 +500,18 @@ def build_parser() -> argparse.ArgumentParser:
     run_series_parser.add_argument("--receipts", default="receipts")
     run_series_parser.add_argument("--downloads")
     run_series_parser.set_defaults(handler=_run_series)
+
+    run_batch_parser = subparsers.add_parser(
+        "run-batch",
+        help="R10: validate and execute durable independent graph experiments",
+    )
+    run_batch_parser.add_argument("plan")
+    run_batch_parser.add_argument("--state", required=True)
+    run_batch_parser.add_argument("--job-timeout", type=float, default=3600.0)
+    run_batch_parser.add_argument("--poll-interval", type=float, default=5.0)
+    run_batch_parser.add_argument("--receipts", default="receipts")
+    run_batch_parser.add_argument("--downloads")
+    run_batch_parser.set_defaults(handler=_run_batch)
 
     history = subparsers.add_parser("history", help="inspect one exact job")
     history.add_argument("prompt_id")

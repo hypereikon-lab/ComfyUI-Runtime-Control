@@ -5,6 +5,10 @@ class ComfyRuntimeError(RuntimeError):
     """The remote runtime returned an error or an invalid response."""
 
 
+class JobExecutionError(ComfyRuntimeError):
+    """One exact prompt reached a terminal failed state in ComfyUI history."""
+
+
 class GraphValidationError(ValueError):
     """An API graph does not match the captured live node schemas."""
 

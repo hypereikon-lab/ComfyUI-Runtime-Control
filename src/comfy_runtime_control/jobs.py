@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from .client import ComfyClient
-from .errors import ComfyRuntimeError
+from .errors import ComfyRuntimeError, JobExecutionError
 
 
 @dataclass(frozen=True)
@@ -60,7 +60,7 @@ def wait_for_job(
             status = history.get("status", {})
             if isinstance(status, dict) and status.get("completed") is False:
                 messages = status.get("messages", [])
-                raise ComfyRuntimeError(f"job {prompt_id} failed: {messages!r}")
+                raise JobExecutionError(f"job {prompt_id} failed: {messages!r}")
             return history
         time.sleep(min(interval, max(0.01, deadline - time.monotonic())))
     raise TimeoutError(f"job {prompt_id} did not finish within {timeout:g} seconds")

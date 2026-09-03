@@ -308,6 +308,14 @@ The token is an infrastructure credential, not a Comfy setting. It should be:
 - excluded from workflow files and run receipts;
 - tested for both HTTP and WebSocket upgrade behavior in the selected client.
 
+On macOS, storing the service-token fields with
+`security add-generic-password` and retrieving them with
+`security find-generic-password -w` is a suitable local secret-manager path.
+Pass the retrieved values only as `CF_ACCESS_CLIENT_ID` and
+`CF_ACCESS_CLIENT_SECRET` in the runner process environment. Do not base the
+headless protocol on an authenticated browser session when this service-token
+path is available.
+
 For clients that cannot attach headers to WebSocket upgrades, use HTTP polling
 as a fallback or establish an authenticated application session through a
 supported machine flow. Do not work around this by copying browser cookies.
@@ -902,6 +910,21 @@ WebSocket freshness
 ```
 
 This can be a CLI report or agent tool; it does not need a dashboard.
+
+On a shared GPU host, availability must not be inferred from the Comfy queue
+alone. `/queue` covers work submitted to that one Comfy process; another CUDA
+application or another Comfy process can consume the same device invisibly to
+it. In `/system_stats`, `vram_free` is global device availability, while
+`torch_vram_total` and `torch_vram_free` describe the allocator of the current
+Comfy Python process. Host `ram_free` is global available RAM and does not
+attribute ownership to a process.
+
+Use a persisted sequence of observations rather than one instantaneous sample.
+The sequence must reset when any resource threshold fails or when the interval
+between observations exceeds a declared maximum. Monitoring remains read-only;
+automatic execution is a separate capability that must bind one exact,
+pre-authorized graph or batch and repeat the availability check immediately
+before submission.
 
 ## 15. Avoiding premature product boundaries
 

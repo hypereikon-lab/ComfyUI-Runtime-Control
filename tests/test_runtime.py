@@ -1,3 +1,4 @@
+from datetime import datetime
 from pathlib import Path
 import json
 import tempfile
@@ -8,6 +9,17 @@ from comfy_runtime_control.artifacts import (
     artifacts_from_history,
     download_artifact,
     unique_physical_artifacts,
+)
+from comfy_runtime_control.availability import (
+    observe_availability,
+    validate_availability_policy,
+)
+from comfy_runtime_control.batch import (
+    BATCH_SCHEMA,
+    BATCH_STATE_SCHEMA,
+    run_batch,
+    validate_batch_plan,
+    validate_batch_state,
 )
 from comfy_runtime_control.client import ComfyClient, RuntimeConfig
 from comfy_runtime_control.canonical import content_hash
@@ -94,6 +106,8 @@ class FakeTransport:
     def __init__(self):
         self.calls = []
         self.history_calls = 0
+        self.ram_free = 32_000_000_000
+        self.vram_free = 28_000_000_000
 
     def request(self, method, url, *, headers=None, json_body=None, data=None, timeout=30.0):
         self.calls.append((method, url, headers or {}, json_body, data))
@@ -104,9 +118,20 @@ class FakeTransport:
             value = {"supports_preview_metadata": True}
         elif path == "/system_stats":
             value = {
-                "system": {"comfyui_version": "test", "ram_total": 64_000_000_000},
+                "system": {
+                    "comfyui_version": "test",
+                    "ram_total": 64_000_000_000,
+                    "ram_free": self.ram_free,
+                },
                 "devices": [
-                    {"name": "NVIDIA RTX 5090", "type": "cuda", "vram_total": 32_000_000_000}
+                    {
+                        "name": "NVIDIA RTX 5090",
+                        "type": "cuda",
+                        "vram_total": 32_000_000_000,
+                        "vram_free": self.vram_free,
+                        "torch_vram_total": 100_000_000,
+                        "torch_vram_free": 60_000_000,
+                    }
                 ],
             }
         elif path == "/extensions":
@@ -240,6 +265,31 @@ class SeriesTransport(FakeTransport):
         )
 
 
+class BatchFailureTransport(SeriesTransport):
+    def request(self, method, url, *, headers=None, json_body=None, data=None, timeout=30.0):
+        path = url.split("https://unit.invalid", 1)[-1].split("?", 1)[0]
+        if path == "/history/p1":
+            self.calls.append((method, url, headers or {}, json_body, data))
+            value = {
+                "p1": {
+                    "status": {
+                        "completed": False,
+                        "messages": [["execution_error", {"node_id": "2"}]],
+                    },
+                    "outputs": {},
+                }
+            }
+            return 200, {"Content-Type": "application/json"}, json.dumps(value).encode()
+        return super().request(
+            method,
+            url,
+            headers=headers,
+            json_body=json_body,
+            data=data,
+            timeout=timeout,
+        )
+
+
 class RuntimeTests(unittest.TestCase):
     def client(self):
         transport = FakeTransport()
@@ -264,7 +314,7 @@ class RuntimeTests(unittest.TestCase):
         self.assertNotIn("secret", json.dumps(compact))
         self.assertEqual(transport.calls[0][2]["CF-Access-Client-Id"], "id")
         self.assertEqual(
-            transport.calls[0][2]["User-Agent"], "comfy-runtime-control/0.6.0"
+            transport.calls[0][2]["User-Agent"], "comfy-runtime-control/0.8.0"
         )
         self.assertEqual(validate_runtime_manifest(manifest), OBJECT_INFO)
         tampered = json.loads(json.dumps(manifest))
@@ -371,6 +421,96 @@ class RuntimeTests(unittest.TestCase):
         malformed["required_node_types"].append("LoadImage")
         with self.assertRaisesRegex(ValueError, "duplicates"):
             validate_runtime_requirements(malformed)
+
+    def test_availability_requires_a_continuous_observed_window(self):
+        client, _ = self.client()
+        policy = {
+            "schema": "comfy.availability-policy/1",
+            "id": "unit-shared-gpu",
+            "device_name_contains": "RTX 5090",
+            "minimum_free_ram_bytes": 16_000_000_000,
+            "minimum_free_vram_bytes": 24_000_000_000,
+            "require_queue_idle": True,
+            "stable_for_seconds": 900,
+            "maximum_sample_gap_seconds": 600,
+        }
+        validate_availability_policy(policy)
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "availability.json"
+            first = observe_availability(
+                client,
+                policy,
+                state_path=state,
+                now=datetime.fromisoformat("2026-09-02T12:00:00+00:00"),
+            )
+            middle = observe_availability(
+                client,
+                policy,
+                state_path=state,
+                now=datetime.fromisoformat("2026-09-02T12:05:00+00:00"),
+            )
+            ready = observe_availability(
+                client,
+                policy,
+                state_path=state,
+                now=datetime.fromisoformat("2026-09-02T12:15:00+00:00"),
+            )
+            persistent = json.loads(state.read_text(encoding="utf-8"))
+        self.assertFalse(first["ready"])
+        self.assertEqual(middle["stable_seconds"], 300)
+        self.assertTrue(ready["ready"])
+        self.assertEqual(ready["transition"], "became-ready")
+        self.assertEqual(
+            ready["observation"]["comfy_torch_active_vram_bytes"], 40_000_000
+        )
+        self.assertEqual(persistent["sample_count"], 3)
+        self.assertEqual(persistent["ready_since"], "2026-09-02T12:15:00Z")
+
+    def test_availability_resets_on_pressure_and_sample_gap(self):
+        client, transport = self.client()
+        policy = {
+            "schema": "comfy.availability-policy/1",
+            "id": "unit-reset",
+            "device_name_contains": "5090",
+            "minimum_free_ram_bytes": 16_000_000_000,
+            "minimum_free_vram_bytes": 24_000_000_000,
+            "require_queue_idle": True,
+            "stable_for_seconds": 300,
+            "maximum_sample_gap_seconds": 360,
+        }
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory) / "availability.json"
+            observe_availability(
+                client,
+                policy,
+                state_path=state,
+                now=datetime.fromisoformat("2026-09-02T12:00:00+00:00"),
+            )
+            ready = observe_availability(
+                client,
+                policy,
+                state_path=state,
+                now=datetime.fromisoformat("2026-09-02T12:05:00+00:00"),
+            )
+            transport.vram_free = 2_000_000_000
+            unavailable = observe_availability(
+                client,
+                policy,
+                state_path=state,
+                now=datetime.fromisoformat("2026-09-02T12:06:00+00:00"),
+            )
+            transport.vram_free = 28_000_000_000
+            after_gap = observe_availability(
+                client,
+                policy,
+                state_path=state,
+                now=datetime.fromisoformat("2026-09-02T12:20:00+00:00"),
+            )
+        self.assertTrue(ready["ready"])
+        self.assertEqual(unavailable["transition"], "became-unavailable")
+        self.assertFalse(unavailable["checks"]["minimum_free_vram"])
+        self.assertEqual(after_gap["stable_seconds"], 0)
+        self.assertFalse(after_gap["continuity_preserved"])
 
     def test_compiler_binds_and_live_validates_template(self):
         template = {
@@ -866,6 +1006,130 @@ class RuntimeTests(unittest.TestCase):
                     plan_hash=plan_hash,
                     steps=steps,
                 )
+
+    def _batch_fixture(self, directory, *, step_count=2):
+        root = Path(directory)
+        (root / "graphs").mkdir()
+        (root / "operations").mkdir()
+        steps = []
+        for number in range(1, step_count + 1):
+            step_id = f"step-{number}"
+            graph = root / "graphs" / f"{step_id}.json"
+            operation = root / "operations" / f"{step_id}.json"
+            graph.write_text(json.dumps(GRAPH), encoding="utf-8")
+            operation.write_text(json.dumps(OPERATION_REF), encoding="utf-8")
+            steps.append(
+                {
+                    "id": step_id,
+                    "graph": f"graphs/{step_id}.json",
+                    "operation_ref": f"operations/{step_id}.json",
+                }
+            )
+        return {"schema": BATCH_SCHEMA, "id": "unit-batch", "steps": steps}
+
+    def test_batch_plan_is_independent_and_rejects_unsafe_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            plan = self._batch_fixture(directory)
+            steps, plan_hash = validate_batch_plan(plan, root=Path(directory))
+            self.assertEqual([step.id for step in steps], ["step-1", "step-2"])
+            self.assertEqual(len(plan_hash), 64)
+            unsafe = json.loads(json.dumps(plan))
+            unsafe["steps"][0]["graph"] = "../outside.json"
+            with self.assertRaisesRegex(ValueError, "safe relative"):
+                validate_batch_plan(unsafe, root=Path(directory))
+
+    def test_batch_executes_sequentially_and_persists_resumable_state(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._batch_fixture(directory)
+            transport = SeriesTransport()
+            client = ComfyClient(RuntimeConfig("https://unit.invalid"), transport)
+            result = run_batch(
+                client,
+                plan,
+                plan_root=root,
+                state_path=root / "state.json",
+                receipts_dir=root / "receipts",
+                timeout=1.0,
+                interval=0.001,
+            )
+            self.assertEqual(result["completed_steps"], ["step-1", "step-2"])
+            self.assertEqual(result["prompt_ids"], ["p1", "p2"])
+            state = json.loads((root / "state.json").read_text())
+            steps, plan_hash = validate_batch_plan(plan, root=root)
+            validate_batch_state(
+                state,
+                plan_id=plan["id"],
+                plan_hash=plan_hash,
+                steps=steps,
+            )
+            prompt_calls = [call for call in transport.calls if call[1].endswith("/prompt")]
+            self.assertEqual(len(prompt_calls), 2)
+            self.assertEqual(
+                prompt_calls[1][3]["extra_data"]["runtime_control"]["batch_step"],
+                "step-2",
+            )
+
+    def test_batch_resume_polls_stored_prompt_without_resubmitting(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._batch_fixture(directory, step_count=1)
+            steps, plan_hash = validate_batch_plan(plan, root=root)
+            state = {
+                "schema": BATCH_STATE_SCHEMA,
+                "plan_id": plan["id"],
+                "plan_hash": plan_hash,
+                "steps": [
+                    {
+                        "id": "step-1",
+                        "status": "submitted",
+                        "prompt_id": "resume-77",
+                        "receipt": None,
+                        "receipt_hash": None,
+                        "error": None,
+                    }
+                ],
+            }
+            state["state_hash"] = content_hash(state)
+            state_path = root / "state.json"
+            state_path.write_text(json.dumps(state), encoding="utf-8")
+            transport = SeriesTransport(resumed_prompt_id="resume-77")
+            client = ComfyClient(RuntimeConfig("https://unit.invalid"), transport)
+            result = run_batch(
+                client,
+                plan,
+                plan_root=root,
+                state_path=state_path,
+                receipts_dir=root / "receipts",
+                timeout=1.0,
+                interval=0.001,
+            )
+            self.assertEqual(result["prompt_ids"], ["resume-77"])
+            self.assertFalse(any(call[1].endswith("/prompt") for call in transport.calls))
+
+    def test_batch_records_terminal_failure_and_continues_independent_steps(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            plan = self._batch_fixture(directory)
+            transport = BatchFailureTransport()
+            client = ComfyClient(RuntimeConfig("https://unit.invalid"), transport)
+            result = run_batch(
+                client,
+                plan,
+                plan_root=root,
+                state_path=root / "state.json",
+                receipts_dir=root / "receipts",
+                timeout=1.0,
+                interval=0.001,
+            )
+            self.assertEqual(result["failed_steps"], ["step-1"])
+            self.assertEqual(result["completed_steps"], ["step-2"])
+            self.assertEqual(result["prompt_ids"], ["p1", "p2"])
+            state = json.loads((root / "state.json").read_text())
+            self.assertEqual(state["steps"][0]["status"], "failed")
+            self.assertIn("execution_error", state["steps"][0]["error"])
+            first_receipt = json.loads(Path(result["receipts"][0]).read_text())
+            self.assertEqual(first_receipt["evidence_status"], "blocked")
 
 
 if __name__ == "__main__":

@@ -4,22 +4,25 @@
    materialized.
 2. Evaluate the project's runtime-requirements profile against that same
    manifest and stop on any automated gate failure.
-3. Complete declared manual checks such as free storage and local auto-start.
-4. Compose and clean one active graph in ComfyUI.
-5. Export its paired UI and API forms through Workspace Control.
-6. Declare guarded parameter pointers and materialize a review-gated draft.
-7. Validate the API graph against the same captured `/object_info`.
-8. Resolve every missing custom-node type before submission.
-9. Submit once and retain the exact prompt id.
-10. Poll its history rather than trusting an ambiguous browser progress display.
-11. Enumerate artifacts only from that history record.
-12. Use bounded `recent-artifacts`, `artifacts PROMPT_ID`, and
+3. On a shared host, use `observe-availability` until global free RAM/VRAM and
+   the queue have satisfied the declared stability window. Queue idle alone
+   cannot detect another CUDA process.
+4. Complete declared manual checks such as free storage and local auto-start.
+5. Compose and clean one active graph in ComfyUI.
+6. Export its paired UI and API forms through Workspace Control.
+7. Declare guarded parameter pointers and materialize a review-gated draft.
+8. Validate the API graph against the same captured `/object_info`.
+9. Resolve every missing custom-node type before submission.
+10. Submit once and retain the exact prompt id.
+11. Poll its history rather than trusting an ambiguous browser progress display.
+12. Enumerate artifacts only from that history record.
+13. Use bounded `recent-artifacts`, `artifacts PROMPT_ID`, and
     `download-artifacts PROMPT_ID --downloads DIR` for existing jobs; downloads
     stream to a temporary file and refuse local replacement unless
     `--overwrite` is explicit.
-13. Record the immutable run receipt with the exact semantic operation id,
+14. Record the immutable run receipt with the exact semantic operation id,
     version, and contract hash.
-14. Review outputs and separately assign `visually-accepted` or `rejected`.
+15. Review outputs and separately assign `visually-accepted` or `rejected`.
 
 The full probe keeps content-addressed snapshots of `/object_info`, `/models`,
 and `/queue` beside compact endpoint hashes. `public_manifest()` strips all

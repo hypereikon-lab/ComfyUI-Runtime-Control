@@ -1,0 +1,10 @@
+{
+  "schema": "comfy.availability-policy/1",
+  "id": "shared-rtx-5090-h3",
+  "device_name_contains": "RTX 5090",
+  "minimum_free_ram_bytes": 17179869184,
+  "minimum_free_vram_bytes": 25769803776,
+  "require_queue_idle": true,
+  "stable_for_seconds": 900,
+  "maximum_sample_gap_seconds": 600
+}

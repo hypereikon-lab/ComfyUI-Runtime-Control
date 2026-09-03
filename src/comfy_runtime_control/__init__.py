@@ -3,7 +3,7 @@
 from .version import __version__
 from .client import ComfyClient, RuntimeConfig
 from .compiler import CompiledGraph, compile_api_template
-from .errors import ComfyRuntimeError, GraphValidationError, MutationGuardError
+from .errors import ComfyRuntimeError, GraphValidationError, JobExecutionError, MutationGuardError
 
 __all__ = [
     "ComfyClient",
@@ -12,5 +12,6 @@ __all__ = [
     "compile_api_template",
     "ComfyRuntimeError",
     "GraphValidationError",
+    "JobExecutionError",
     "MutationGuardError",
 ]

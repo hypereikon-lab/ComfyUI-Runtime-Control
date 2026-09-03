@@ -24,6 +24,12 @@ not MiniMax H3, CAUCE, a creative project, or browser layout.
   check when absent. Never auto-retry or overwrite an install journal.
 - A completed queue item means `executes`, not visual success.
 - Persist one immutable run receipt per submitted graph.
+- Automated batch downloads include only unique `output` artifacts. Input and
+  temp references remain provenance in receipts but are never copied over an
+  existing local source as a batch side effect.
+- A batch download root is batch-owned. Replacing the same exact output path
+  atomically is allowed on resume because transport loss can occur after the
+  file is durable but before the completed state transition is durable.
 - Materialize reusable graph drafts only from one Workspace Control export that
   contains paired UI/API graphs and verified hashes. Parameterize existing
   literal inputs with expected-value guards; never replace graph links.
@@ -40,9 +46,20 @@ not MiniMax H3, CAUCE, a creative project, or browser layout.
   polling it, resume that exact id, and require completed steps to form a
   content-addressed prefix. Never infer H3 continuity or pass artifacts between
   steps implicitly; each executable graph must already contain exact inputs.
+- Durable batches contain independent, fully prebound graphs. Validate every
+  graph against one live manifest before the first submission, execute them
+  sequentially to bound GPU load, persist each exact prompt id immediately,
+  and resume that id after transport loss. Do not encode false data
+  dependencies merely to serialize an experiment matrix.
 - Runtime requirements are opaque project policy. Evaluate exact endpoints,
   node types, model filenames, hardware thresholds, and queue state against one
   full captured manifest; do not reinterpret or silently relax failed gates.
+- Shared-host availability is a separate durable read-only gate. Require global
+  free RAM, global free VRAM, queue state, a continuous observed window, and a
+  bounded maximum sample gap. Do not mistake queue idle for GPU idle, or
+  `vram_free`/`ram_free` for cache ownership. Availability observation never
+  launches a graph; an eventual launcher must bind one pre-authorized exact
+  plan and recheck immediately before submission.
 - Free storage and physical power/recovery are manual checks unless a bounded,
   authoritative runtime route is available. Never infer them from GPU memory or
   model lists.
